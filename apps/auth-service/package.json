@@ -9,6 +9,7 @@
     "migrate:undo": "sequelize-cli db:migrate:undo"
   },
   "dependencies": {
+    "@miro/shared": "*",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",

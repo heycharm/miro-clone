@@ -1,15 +1,12 @@
 {
-  "name": "shared",
+  "name": "@miro/shared",
   "version": "1.0.0",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
   "dependencies": {
-    "zod": "^4.4.3"
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
   }
 }
