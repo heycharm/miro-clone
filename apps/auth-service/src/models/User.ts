@@ -71,10 +71,22 @@ User.init(
     providerId: {
       type: DataTypes.STRING,
       allowNull: true,
+      field: "provider_id",
     },
     refreshToken: {
       type: DataTypes.TEXT,
       allowNull: true,
+      field: "refresh_token",
+    },
+    createdAt: {
+      type: DataTypes.DATE,
+      allowNull: false,
+      field: "created_at",
+    },
+    updatedAt: {
+      type: DataTypes.DATE,
+      allowNull: false,
+      field: "updated_at",
     },
   },
   {
