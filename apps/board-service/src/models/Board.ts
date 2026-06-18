@@ -28,3 +28,38 @@ export class Board extends Model<BoardAttributes, BoardCreationAttributes> {
   declare createdAt: Date;
   declare updatedAt: Date;
 }
+
+Board.init(
+  {
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true,
+    },
+    title: {
+      type: DataTypes.STRING(200),
+      allowNull: false,
+    },
+    description: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+    thumbnail: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    isPublic: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+    },
+    ownerId: {
+      type: DataTypes.UUID,
+      allowNull: false,
+    },
+  },
+  {
+    sequelize,
+    modelName: "Board",
+    tableName: "boards",
+  },
+);
