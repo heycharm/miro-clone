@@ -6,7 +6,6 @@ interface BoardAttributes {
     title: string;
     description: string |null ;
     thumbnail: string | null ;
-
     isPublic: boolean;
     ownerId: string;
     createdAt?: Date;

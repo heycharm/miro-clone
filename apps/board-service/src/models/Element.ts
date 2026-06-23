@@ -9,7 +9,7 @@ interface ElementAttributes {
   y: number;
   width: number;
   height: number;
-  roataion: number;
+  rotation: number;
   zIndex: number;
 
   properties: Record<string, unknown>;
