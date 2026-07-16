@@ -6,7 +6,7 @@ const schema = z.object({
   NODE_ENV: z
     .enum(["development", "production", "test"])
     .default("development"),
-  PORT: z.string().default("3001"),
+  PORT: z.string().default("3003"),
   DATABASE_URL: z.string(),
   REDIS_URL: z.string().default("redis://localhost:6379"),
   JWT_SECRET: z.string().min(32),
