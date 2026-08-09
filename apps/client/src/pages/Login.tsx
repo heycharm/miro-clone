@@ -1,13 +1,24 @@
-// apps/client/src/pages/Login.tsx
+// src/pages/Login.tsx
 import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
-import { authApi } from "../api/auth.api";
-import { useAuthStore } from "../store/auth.store";
+import { Link, useNavigate } from "react-router-dom";
+import { Loader2, Layers } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { authApi } from "@/api/auth.api";
+import { useAuthStore } from "@/store/auth.store";
 
 export const Login = () => {
   const navigate = useNavigate();
   const { setAuth } = useAuthStore();
-
   const [form, setForm] = useState({ email: "", password: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -16,73 +27,110 @@ export const Login = () => {
     e.preventDefault();
     setError("");
     setLoading(true);
-
     try {
       const { data } = await authApi.login(form);
       setAuth(data.user, data.accessToken, data.refreshToken);
       navigate("/dashboard");
     } catch (err: any) {
-      setError(err.response?.data?.message || "Login failed");
+      setError(err.response?.data?.message || "Invalid credentials");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <div className="bg-white p-8 rounded-xl shadow-sm w-full max-w-md">
-        <h1 className="text-2xl font-semibold text-gray-800 mb-6">
-          Sign in to Miro Clone
-        </h1>
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
+      {/* background grid effect */}
+      <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff08_1px,transparent_1px),linear-gradient(to_bottom,#ffffff08_1px,transparent_1px)] bg-[size:32px_32px]" />
 
-        {error && (
-          <div className="bg-red-50 text-red-600 px-4 py-3 rounded-lg mb-4 text-sm">
-            {error}
+      <div className="relative w-full max-w-md">
+        {/* logo */}
+        <div className="flex items-center justify-center gap-2 mb-8">
+          <div className="w-9 h-9 bg-blue-500 rounded-xl flex items-center justify-center">
+            <Layers className="w-5 h-5 text-white" />
           </div>
-        )}
+          <span className="text-white text-xl font-semibold tracking-tight">
+            CollabBoard
+          </span>
+        </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Email
-            </label>
-            <input
-              type="email"
-              value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-            />
-          </div>
+        <Card className="border-slate-700/50 bg-slate-800/50 backdrop-blur-xl shadow-2xl">
+          <CardHeader className="space-y-1 pb-4">
+            <CardTitle className="text-2xl text-white">Welcome back</CardTitle>
+            <CardDescription className="text-slate-400">
+              Sign in to continue to your boards
+            </CardDescription>
+          </CardHeader>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Password
-            </label>
-            <input
-              type="password"
-              value={form.password}
-              onChange={(e) => setForm({ ...form, password: e.target.value })}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-            />
-          </div>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {error && (
+                <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded-lg text-sm">
+                  {error}
+                </div>
+              )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-blue-500 hover:bg-blue-600 text-white py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
-          >
-            {loading ? "Signing in..." : "Sign in"}
-          </button>
-        </form>
+              <div className="space-y-2">
+                <Label htmlFor="email" className="text-slate-300">
+                  Email
+                </Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="you@example.com"
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  className="bg-slate-700/50 border-slate-600 text-white placeholder:text-slate-500 focus:border-blue-500 focus:ring-blue-500/20"
+                  required
+                />
+              </div>
 
-        <p className="text-sm text-gray-500 text-center mt-4">
-          Don't have an account?{" "}
-          <Link to="/register" className="text-blue-500 hover:underline">
-            Register
-          </Link>
-        </p>
+              <div className="space-y-2">
+                <Label htmlFor="password" className="text-slate-300">
+                  Password
+                </Label>
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="••••••••"
+                  value={form.password}
+                  onChange={(e) =>
+                    setForm({ ...form, password: e.target.value })
+                  }
+                  className="bg-slate-700/50 border-slate-600 text-white placeholder:text-slate-500 focus:border-blue-500"
+                  required
+                />
+              </div>
+
+              <Button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium h-11 transition-all"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Signing
+                    in...
+                  </>
+                ) : (
+                  "Sign in"
+                )}
+              </Button>
+            </form>
+          </CardContent>
+
+          <CardFooter className="justify-center pb-6">
+            <p className=" text-sm">
+              Don't have an account?{" "}
+              <Link
+                to="/register"
+                className="text-blue-400 hover:text-blue-300 font-medium transition-colors"
+              >
+                Create one
+              </Link>
+            </p>
+          </CardFooter>
+        </Card>
       </div>
     </div>
   );

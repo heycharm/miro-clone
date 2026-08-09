@@ -1,68 +1,48 @@
 // apps/client/src/api/axios.ts
 import axios from "axios";
 
-/**
- * Axios instance with base URL and interceptors
- *
- * Instead of typing the full URL every time:
- * axios.get('http://localhost:4000/api/boards')
- *
- * We create an instance with baseURL set:
- * api.get('/boards')   ← much cleaner
- *
- * Interceptors — functions that run on every request/response:
- * request interceptor  → adds auth token to every request automatically
- * response interceptor → handles 401 globally (redirect to login)
- */
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:4000/api";
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL,
+  baseURL: API_URL,
   headers: { "Content-Type": "application/json" },
 });
 
-// attach token to every outgoing request
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("accessToken");
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
+  if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
+console.log("token:", localStorage.getItem("accessToken"));
 
-// handle expired tokens globally
 api.interceptors.response.use(
-  (response) => response,
+  (res) => res,
   async (error) => {
-    const originalRequest = error.config;
+    const original = error.config;
 
-    /**
-     * If we get a 401 and haven't already tried to refresh:
-     * 1. Call /auth/refresh with the refresh token
-     * 2. Store the new access token
-     * 3. Retry the original request with the new token
-     *
-     * This is silent token refresh — user never sees a login prompt
-     * unless the refresh token itself has expired (after 7 days)
-     */
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      originalRequest._retry = true;
+    if (error.response?.status === 401 && !original._retry) {
+      original._retry = true;
 
       try {
         const refreshToken = localStorage.getItem("refreshToken");
         if (!refreshToken) throw new Error("No refresh token");
 
+        /**
+         * Use the full URL with API_URL — not a relative path
+         * Relative paths go to Vite dev server (port 5173)
+         * We need to hit the gateway (port 4000)
+         */
         const { data } = await axios.post(
-          `${import.meta.env.VITE_API_URL}/auth/refresh`,
+          `${API_URL}/auth/refresh`, // ← full URL, not just '/auth/refresh'
           { refreshToken },
         );
 
         localStorage.setItem("accessToken", data.accessToken);
         localStorage.setItem("refreshToken", data.refreshToken);
 
-        originalRequest.headers.Authorization = `Bearer ${data.accessToken}`;
-        return api(originalRequest);
+        original.headers.Authorization = `Bearer ${data.accessToken}`;
+        return api(original);
       } catch {
-        // refresh failed — clear tokens and redirect to login
         localStorage.removeItem("accessToken");
         localStorage.removeItem("refreshToken");
         window.location.href = "/login";

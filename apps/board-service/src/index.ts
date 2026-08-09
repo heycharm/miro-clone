@@ -7,6 +7,7 @@ import { env } from "./config/env";
 import { connectDB } from "./config/database";
 import boardRoutes from "./routes/board.routes";
 import { errorMiddleware } from "./middlewares/error.middleware";
+import "./models/index"; // ← add this — runs associations on startup
 
 const app = express();
 

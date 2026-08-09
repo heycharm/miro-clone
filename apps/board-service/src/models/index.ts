@@ -3,23 +3,25 @@ import { Board } from "./Board";
 import { BoardMember } from "./BoardMember";
 import { Element } from "./Element";
 
-/**
- * Associations tell Sequelize how models relate
- * so you can do Board.findOne({ include: [Element] })
- * and get everything in one query instead of two
- */
 Board.hasMany(BoardMember, {
-  foreignKey: "boardId",
+  foreignKey: "board_id",
   as: "members",
   onDelete: "CASCADE",
 });
-BoardMember.belongsTo(Board, { foreignKey: "boardId" });
+
+BoardMember.belongsTo(Board, {
+  foreignKey: "board_id",
+  as: "Board", // ← must be capital B
+});
 
 Board.hasMany(Element, {
-  foreignKey: "boardId",
+  foreignKey: "board_id",
   as: "elements",
   onDelete: "CASCADE",
 });
-Element.belongsTo(Board, { foreignKey: "boardId" });
+
+Element.belongsTo(Board, {
+  foreignKey: "board_id",
+});
 
 export { Board, BoardMember, Element };

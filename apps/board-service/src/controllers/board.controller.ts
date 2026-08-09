@@ -6,26 +6,29 @@ import {
   inviteMemberSchema,
   updateMemberRoleSchema,
 } from "../types";
+import { env } from '../config/env';
 
 export const boardController = {
   async getMyBoards(req: Request, res: Response, next: NextFunction) {
     try {
       const userId = (req as any).userId;
 
-      /**
-       * We find all BoardMember rows for this user, then include the Board
-       * This is more efficient than finding all boards and filtering
-       * because the composite index on (boardId, userId) makes this fast
-       */
       const memberships = await BoardMember.findAll({
         where: { userId },
-        include: [{ model: Board, as: "board" }],
+        include: [
+          {
+            model: Board,
+            as: "Board", // ← capital B, matches association in models/index.ts
+          },
+        ],
       });
 
-      const boards = memberships.map((m: any) => ({
-        ...m.board.toJSON(),
-        role: m.role,
-      }));
+      const boards = memberships
+        .filter((m: any) => m.Board !== null)
+        .map((m: any) => ({
+          ...m.Board.toJSON(),
+          role: m.role,
+        }));
 
       return res.status(200).json({ boards });
     } catch (err) {
@@ -173,7 +176,7 @@ export const boardController = {
 
       // call auth-service to get userId from email
       const response = await fetch(
-        `${process.env.AUTH_SERVICE_URL}/auth/user-by-email?email=${email}`,
+        `${env.AUTH_SERVICE_URL}/auth/user-by-email?email=${email}`,
       );
 
       if (!response.ok) {
@@ -257,6 +260,59 @@ export const boardController = {
       await member.destroy();
 
       return res.status(200).json({ message: "Member removed" });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  // apps/board-service/src/controllers/board.controller.ts
+  // add this function to boardController
+
+  // apps/board-service/src/controllers/board.controller.ts
+
+  async getMembers(req: Request, res: Response, next: NextFunction) {
+    try {
+      const members = await BoardMember.findAll({
+        where: { boardId: req.params.id },
+      });
+
+      /**
+       * Enrich each member with their name/email from auth-service
+       * BoardMember only stores userId — no name or email
+       * We call auth-service to get that info
+       *
+       * Promise.allSettled — runs all fetches in parallel
+       * If one fails it doesn't crash the whole request
+       * Failed ones just show userId as fallback
+       */
+      const enriched = await Promise.allSettled(
+        members.map(async (member) => {
+          try {
+            const response = await fetch(
+              `${env.AUTH_SERVICE_URL}/auth/user-by-id?userId=${member.userId}`,
+            );
+            const data = (await response.json()) as any;
+            return {
+              ...member.toJSON(),
+              name: data.name || "Unknown",
+              email: data.email || member.userId,
+            };
+          } catch {
+            // if auth-service call fails, just return userId as fallback
+            return {
+              ...member.toJSON(),
+              name: "Unknown",
+              email: member.userId,
+            };
+          }
+        }),
+      );
+
+      const result = enriched.map((r) =>
+        r.status === "fulfilled" ? r.value : { error: true },
+      );
+
+      return res.status(200).json({ members: result });
     } catch (err) {
       next(err);
     }

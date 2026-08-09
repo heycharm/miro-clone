@@ -170,4 +170,56 @@ export const authController = {
       next(err);
     }
   },
+  // apps/auth-service/src/controllers/auth.controller.ts
+  // add this to authController
+
+  async getUserByEmail(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { email } = req.query as { email: string };
+      if (!email) {
+        return res.status(400).json({ message: "Email required" });
+      }
+
+      const user = await User.findOne({
+        where: { email },
+        attributes: ["id", "name", "email", "avatar"],
+      });
+
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      return res.status(200).json({
+        userId: user.id,
+        name: user.name,
+        email: user.email,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+  async getUserById(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { userId } = req.query as { userId: string };
+      if (!userId) {
+        return res.status(400).json({ message: "userId required" });
+      }
+
+      const user = await User.findByPk(userId, {
+        attributes: ["id", "name", "email", "avatar"],
+      });
+
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      return res.status(200).json({
+        userId: user.id,
+        name: user.name,
+        email: user.email,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
 };

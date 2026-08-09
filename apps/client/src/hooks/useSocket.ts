@@ -1,9 +1,9 @@
 // apps/client/src/hooks/useSocket.ts
+
 import { useEffect, useRef } from "react";
 import { io, Socket } from "socket.io-client";
-import { useBoardStore } from "../store/board.store";
-import { useAuthStore } from "../store/auth.store";
-import type { BoardElement, UserPresence } from "../types";
+import { useBoardStore } from "@/store/board.store";
+import type { BoardElement, UserPresence } from "@/types";
 
 const EVENTS = {
   JOIN_BOARD: "board:join",
@@ -21,23 +21,10 @@ const EVENTS = {
   CURSOR_UPDATED: "cursor:updated",
 };
 
-/**
- * useSocket — custom hook that manages the entire Socket.io lifecycle
- *
- * Custom hooks let you extract stateful logic from components
- * so the component just calls useSocket(boardId) and gets back
- * emit functions — it doesn't need to know anything about Socket.io
- *
- * useRef for the socket — NOT useState
- * Why? Socket is a side effect, not UI state
- * Changing the socket ref should not trigger a re-render
- * useRef persists across renders without causing them
- */
 export const useSocket = (boardId: string) => {
   const socketRef = useRef<Socket | null>(null);
-  const { accessToken } = useAuthStore();
+
   const {
-    setElements,
     addElement,
     updateElement,
     deleteElement,
@@ -47,49 +34,70 @@ export const useSocket = (boardId: string) => {
   } = useBoardStore();
 
   useEffect(() => {
-    if (!boardId || !accessToken) return;
+    if (!boardId) return;
 
     /**
-     * Connect to collab-service
-     * auth.token → picked up by our authenticateSocket middleware
+     * Read token directly from localStorage
+     * This is more reliable than reading from Zustand
+     * because Zustand state might not be hydrated yet
+     * when this effect first runs
      */
-    const socket = io(import.meta.env.VITE_COLLAB_URL, {
-      auth: { token: `Bearer ${accessToken}` },
+    const token = localStorage.getItem("accessToken");
+
+    if (!token) {
+      console.error("[socket] No access token found in localStorage");
+      return;
+    }
+
+    console.log("[socket] Connecting with token:", token.slice(0, 20) + "...");
+
+    const COLLAB_URL =
+      import.meta.env.VITE_COLLAB_URL || "http://localhost:3003";
+
+    const socket = io(COLLAB_URL, {
+      /**
+       * Send token in both auth and query
+       * so the server can find it regardless of how it reads it
+       */
+      auth: { token: `Bearer ${token}` },
+      query: { token },
       transports: ["websocket", "polling"],
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 2000,
     });
 
     socketRef.current = socket;
 
-    // ── Connection events ────────────────────────────────────────────────
     socket.on("connect", () => {
-      console.log("[socket] Connected:", socket.id);
+      console.log("[socket] ✅ Connected:", socket.id);
       socket.emit(EVENTS.JOIN_BOARD, boardId);
+      console.log("[socket] Joined board:", boardId);
     });
 
     socket.on("connect_error", (err) => {
-      console.error("[socket] Connection error:", err.message);
+      console.error("[socket] ❌ Error:", err.message);
     });
 
-    socket.on("disconnect", (reason) => {
-      console.log("[socket] Disconnected:", reason);
-    });
-
-    // ── Board state (initial load) ───────────────────────────────────────
     socket.on(
       EVENTS.BOARD_STATE,
       (data: {
         elements: Record<string, BoardElement>;
         users: UserPresence[];
       }) => {
-        setElements(Object.values(data.elements));
+        console.log(
+          "[socket] Board state received:",
+          Object.keys(data.elements).length,
+          "elements",
+        );
         setOnlineUsers(data.users);
       },
     );
 
-    // ── Element events ───────────────────────────────────────────────────
     socket.on(
       EVENTS.ELEMENT_ADDED,
       ({ element }: { element: BoardElement }) => {
+        console.log("[socket] Element added by another user:", element.id);
         addElement(element);
       },
     );
@@ -114,8 +122,8 @@ export const useSocket = (boardId: string) => {
       },
     );
 
-    // ── Presence events ──────────────────────────────────────────────────
     socket.on(EVENTS.USER_JOINED, ({ user }: { user: UserPresence }) => {
+      console.log("[socket] User joined:", user.email);
       setOnlineUsers([...useBoardStore.getState().onlineUsers, user]);
     });
 
@@ -136,29 +144,13 @@ export const useSocket = (boardId: string) => {
       },
     );
 
-    // ── Cleanup ──────────────────────────────────────────────────────────
-    /**
-     * useEffect cleanup runs when:
-     * 1. The component unmounts (user leaves the board page)
-     * 2. boardId changes (user navigates to a different board)
-     *
-     * We must disconnect the socket to:
-     * - Free the connection on the server
-     * - Prevent memory leaks
-     * - Trigger the disconnect handler that cleans up presence
-     */
     return () => {
       socket.emit(EVENTS.LEAVE_BOARD, boardId);
       socket.disconnect();
+      socketRef.current = null;
     };
-  }, [boardId, accessToken]);
+  }, [boardId]); // ← only re-run if boardId changes
 
-  // ── Emit helpers ─────────────────────────────────────────────────────────
-  /**
-   * These functions are what components call to send events
-   * They abstract away the socket — components don't need to
-   * know anything about Socket.io, just call emitAddElement(data)
-   */
   const emitAddElement = (element: BoardElement) => {
     socketRef.current?.emit(EVENTS.ELEMENT_ADD, { boardId, element });
   };
@@ -178,8 +170,13 @@ export const useSocket = (boardId: string) => {
     socketRef.current?.emit(EVENTS.ELEMENT_DELETE, { boardId, elementId });
   };
 
+  let cursorThrottle: ReturnType<typeof setTimeout> | null = null;
   const emitCursorMove = (x: number, y: number) => {
-    socketRef.current?.emit(EVENTS.CURSOR_MOVE, { boardId, x, y });
+    if (cursorThrottle) return;
+    cursorThrottle = setTimeout(() => {
+      socketRef.current?.emit(EVENTS.CURSOR_MOVE, { boardId, x, y });
+      cursorThrottle = null;
+    }, 50);
   };
 
   return {
@@ -187,6 +184,6 @@ export const useSocket = (boardId: string) => {
     emitUpdateElement,
     emitDeleteElement,
     emitCursorMove,
-    socket: socketRef.current,
+    isConnected: socketRef.current?.connected ?? false,
   };
 };

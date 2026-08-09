@@ -6,7 +6,7 @@ import type { JwtPayload } from "@miro/shared";
 export const tokenService = {
   generateAccessToken(payload: JwtPayload): string {
     return jwt.sign(payload, env.JWT_SECRET, {
-      expiresIn: "15m", // short lived
+      expiresIn: "1d", // ← change from 15m to 1d
     });
   },
 

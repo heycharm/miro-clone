@@ -1,34 +1,30 @@
-import { sequelize } from "../config/database";
-import { DataTypes, Model, Optional } from "sequelize";
+// apps/board-service/src/models/Element.ts
+import { DataTypes, Model, Optional } from 'sequelize';
+import { sequelize } from '../config/database';
 
 interface ElementAttributes {
   id: string;
   boardId: string;
-  type: "rect" | "circle" | "text" | "image" | "arrow" | "sticky";
+  type: 'rect' | 'circle' | 'text' | 'image' | 'arrow' | 'sticky' | 'pen';
   x: number;
   y: number;
   width: number;
   height: number;
   rotation: number;
   zIndex: number;
-
   properties: Record<string, unknown>;
   createdBy: string;
-  updatedBy: string;
+  updatedBy: string | null;
   createdAt?: Date;
   updatedAt?: Date;
 }
 
-type ElementCreationAttributes = Omit<
-  //ON claude  -- Optional<>
+type ElementCreationAttributes = Optional<
   ElementAttributes,
-  "id" | "rotation" | "zIndex" | "updatedBy"
+  'id' | 'rotation' | 'zIndex' | 'updatedBy'
 >;
 
-export class Element extends Model<
-  ElementAttributes,
-  ElementCreationAttributes
-> {
+export class Element extends Model<ElementAttributes, ElementCreationAttributes> {
   declare id: string;
   declare boardId: string;
   declare type: string;
@@ -53,6 +49,7 @@ Element.init(
     boardId: {
       type: DataTypes.UUID,
       allowNull: false,
+      field: "board_id",
     },
     type: {
       type: DataTypes.ENUM(
@@ -62,6 +59,7 @@ Element.init(
         "image",
         "arrow",
         "sticky",
+        "pen",
       ),
       allowNull: false,
     },
@@ -70,7 +68,11 @@ Element.init(
     width: { type: DataTypes.FLOAT, allowNull: false },
     height: { type: DataTypes.FLOAT, allowNull: false },
     rotation: { type: DataTypes.FLOAT, defaultValue: 0 },
-    zIndex: { type: DataTypes.INTEGER, defaultValue: 0 },
+    zIndex: {
+      type: DataTypes.INTEGER,
+      defaultValue: 0,
+      field: "z_index",
+    },
     properties: {
       type: DataTypes.JSONB,
       defaultValue: {},
@@ -78,26 +80,19 @@ Element.init(
     createdBy: {
       type: DataTypes.UUID,
       allowNull: false,
+      field: "created_by",
     },
     updatedBy: {
       type: DataTypes.UUID,
       allowNull: true,
+      field: "updated_by",
     },
   },
   {
     sequelize,
     modelName: "Element",
     tableName: "elements",
-    indexes: [
-      {
-        /**
-         * Index on boardId — every element query filters by boardId first
-         * Without this index, loading a board with 1000 elements
-         * does a full table scan. With it, Postgres jumps straight
-         * to the right rows. Critical for performance.
-         */
-        fields: ["boardId"],
-      },
-    ],
+    underscored: true,
+    indexes: [{ fields: ["board_id"] }],
   },
 );

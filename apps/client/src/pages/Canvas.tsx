@@ -1,13 +1,10 @@
 // apps/client/src/components/Canvas.tsx
-import { useRef, useCallback, useEffect } from "react";
-import { Stage, Layer, Rect, Circle, Text, Group } from "react-konva";
+import { useRef, useCallback, useEffect, useState } from "react";
+import { Stage, Layer, Rect, Ellipse, Text, Group, Line } from "react-konva";
 import Konva from "konva";
-import { useBoardStore } from "../store/board.store";
-import type { BoardElement, ToolType } from "../types";
+import { useBoardStore } from "@/store/board.store";
+import type { BoardElement, ToolType } from "@/types";
 import { v4 as uuid } from "uuid";
-
-// npm install uuid @types/uuid
-// run: npm install uuid @types/uuid in apps/client
 
 interface CanvasProps {
   boardId: string;
@@ -16,26 +13,6 @@ interface CanvasProps {
   onElementDelete: (id: string) => void;
   onCursorMove: (x: number, y: number) => void;
 }
-
-/**
- * Konva.js — 2D canvas library for React
- *
- * Why Konva over plain HTML Canvas API?
- * - React-like component model (Stage → Layer → Shape)
- * - Built-in drag and drop on shapes
- * - Hit detection (know which shape was clicked)
- * - Transformer (resize handles) built in
- * - Much easier event handling
- *
- * Structure:
- * Stage  → the canvas container (like a window)
- *   Layer → groups of shapes (like Photoshop layers)
- *     Rect, Circle, Text etc → actual shapes
- *
- * We use two layers:
- * 1. elements layer — all board elements
- * 2. cursor layer   — other users' cursors (on top, never blocked)
- */
 
 export const Canvas = ({
   boardId,
@@ -48,6 +25,15 @@ export const Canvas = ({
   const isDrawing = useRef(false);
   const startPos = useRef({ x: 0, y: 0 });
   const newElRef = useRef<string | null>(null);
+  const penPoints = useRef<number[]>([]);
+  const isPanning = useRef(false);
+  const lastPanPos = useRef({ x: 0, y: 0 });
+  const liveLineRef = useRef<Konva.Line | null>(null);
+  const liveLayerRef = useRef<Konva.Layer | null>(null);
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const {
     elements,
@@ -59,48 +45,118 @@ export const Canvas = ({
     setViewport,
     addElement,
     updateElement,
+    deleteElement,
   } = useBoardStore();
 
   const stageWidth = window.innerWidth;
   const stageHeight = window.innerHeight;
 
-  /**
-   * getPointerPosition — converts screen coordinates to canvas coordinates
-   *
-   * When the canvas is zoomed or panned, a click at screen position (500, 300)
-   * doesn't correspond to canvas position (500, 300) anymore
-   * We need to account for the current scale and offset
-   * Konva's getRelativePointerPosition does this for us
-   */
   const getPos = useCallback(() => {
     const stage = stageRef.current;
     if (!stage) return { x: 0, y: 0 };
     return stage.getRelativePointerPosition() ?? { x: 0, y: 0 };
   }, []);
 
-  // ── Mouse events ──────────────────────────────────────────────────────────
+  // ── Mouse Down ──────────────────────────────────────────────────────────
   const handleMouseDown = useCallback(
     (e: Konva.KonvaEventObject<MouseEvent>) => {
-      // clicked on empty canvas (not a shape)
+      if (editingId) return;
+
       const clickedOnEmpty = e.target === e.target.getStage();
+      const pos = getPos();
+
+      if (activeTool === "pan") {
+        isPanning.current = true;
+        lastPanPos.current = { x: e.evt.clientX, y: e.evt.clientY };
+        return;
+      }
 
       if (activeTool === "select") {
         if (clickedOnEmpty) setSelectedIds([]);
         return;
       }
 
-      if (activeTool === "pan") return;
+      if (activeTool === "text") {
+        const id = uuid();
+        const el: BoardElement = {
+          id,
+          boardId,
+          type: "text",
+          x: pos.x,
+          y: pos.y,
+          width: 200,
+          height: 50,
+          rotation: 0,
+          zIndex: Object.keys(elements).length,
+          createdBy: "",
+          properties: { content: "", fontSize: 18, color: "#ffffff" },
+        };
+        addElement(el);
+        onElementAdd(el);
+        setEditingId(id);
+        setEditingText("");
+        setTimeout(() => textareaRef.current?.focus(), 10);
+        return;
+      }
 
-      // drawing mode
+      if (activeTool === "sticky") {
+        const id = uuid();
+        const el: BoardElement = {
+          id,
+          boardId,
+          type: "sticky",
+          x: pos.x - 100,
+          y: pos.y - 75,
+          width: 200,
+          height: 150,
+          rotation: 0,
+          zIndex: Object.keys(elements).length,
+          createdBy: "",
+          properties: {
+            content: "",
+            backgroundColor: "#FFE66D",
+            textColor: "#333",
+          },
+        };
+        addElement(el);
+        onElementAdd(el);
+        setEditingId(id);
+        setEditingText("");
+        setTimeout(() => textareaRef.current?.focus(), 10);
+        return;
+      }
+
+      if (activeTool === "pen") {
+        /**
+         * Pen uses imperative Konva API — no React state during drawing
+         * We create a real Konva.Line object and add it directly to the layer
+         * This bypasses React entirely so there are zero re-renders while drawing
+         */
+        isDrawing.current = true;
+        penPoints.current = [pos.x, pos.y];
+
+        const line = new Konva.Line({
+          points: [pos.x, pos.y],
+          stroke: "#4A90E2",
+          strokeWidth: 3,
+          tension: 0.5,
+          lineCap: "round",
+          lineJoin: "round",
+        });
+
+        liveLayerRef.current?.add(line);
+        liveLineRef.current = line;
+        return;
+      }
+
+      // RECT / CIRCLE
       isDrawing.current = true;
-      const pos = getPos();
       startPos.current = pos;
 
-      // create a placeholder element immediately for visual feedback
       const id = uuid();
       newElRef.current = id;
 
-      const baseElement: BoardElement = {
+      const el: BoardElement = {
         id,
         boardId,
         type: activeTool as any,
@@ -113,25 +169,42 @@ export const Canvas = ({
         createdBy: "",
         properties: getDefaultProperties(activeTool),
       };
-
-      addElement(baseElement);
+      addElement(el);
     },
-    [activeTool, elements, boardId],
+    [activeTool, elements, boardId, editingId],
   );
 
+  // ── Mouse Move ──────────────────────────────────────────────────────────
   const handleMouseMove = useCallback(
     (e: Konva.KonvaEventObject<MouseEvent>) => {
       const pos = getPos();
-
-      // emit cursor position to other users
       onCursorMove(pos.x, pos.y);
 
+      // PAN
+      if (activeTool === "pan" && isPanning.current) {
+        const dx = e.evt.clientX - lastPanPos.current.x;
+        const dy = e.evt.clientY - lastPanPos.current.y;
+        lastPanPos.current = { x: e.evt.clientX, y: e.evt.clientY };
+        setViewport({
+          x: viewport.x + dx,
+          y: viewport.y + dy,
+        });
+        return;
+      }
+
+      // PEN — no newElRef check needed, pen manages its own refs
+      if (activeTool === "pen" && isDrawing.current) {
+        penPoints.current.push(pos.x, pos.y);
+        liveLineRef.current?.points(penPoints.current);
+        liveLayerRef.current?.batchDraw();
+        return;
+      }
+
+      // RECT / CIRCLE
       if (!isDrawing.current || !newElRef.current) return;
 
-      // update element size as user drags
       const width = pos.x - startPos.current.x;
       const height = pos.y - startPos.current.y;
-
       updateElement(newElRef.current, {
         width: Math.abs(width),
         height: Math.abs(height),
@@ -139,157 +212,282 @@ export const Canvas = ({
         y: height < 0 ? pos.y : startPos.current.y,
       });
     },
-    [onCursorMove],
+    [activeTool, viewport],
   );
 
+  // ── Mouse Up ────────────────────────────────────────────────────────────
   const handleMouseUp = useCallback(() => {
-    if (!isDrawing.current || !newElRef.current) return;
+    isPanning.current = false;
 
+    // PEN — handle separately, doesn't use newElRef
+    if (activeTool === "pen" && isDrawing.current) {
+      isDrawing.current = false;
+
+      if (penPoints.current.length < 6) {
+        liveLineRef.current?.destroy();
+        liveLineRef.current = null;
+        liveLayerRef.current?.batchDraw();
+        penPoints.current = [];
+        return;
+      }
+
+      // remove the live line from the imperative layer
+      liveLineRef.current?.destroy();
+      liveLineRef.current = null;
+      liveLayerRef.current?.batchDraw();
+
+      // calculate bounding box
+      const points = penPoints.current;
+      const xs = points.filter((_, i) => i % 2 === 0);
+      const ys = points.filter((_, i) => i % 2 !== 0);
+      const minX = Math.min(...xs);
+      const minY = Math.min(...ys);
+      const maxX = Math.max(...xs);
+      const maxY = Math.max(...ys);
+
+      const id = uuid();
+      const el: BoardElement = {
+        id,
+        boardId,
+        type: "pen",
+        x: minX,
+        y: minY,
+        width: maxX - minX || 1,
+        height: maxY - minY || 1,
+        rotation: 0,
+        zIndex: Object.keys(useBoardStore.getState().elements).length,
+        createdBy: "",
+        properties: { points, stroke: "#4A90E2", strokeWidth: 3 },
+      };
+
+      addElement(el);
+      onElementAdd(el);
+      penPoints.current = [];
+      return;
+    }
+
+    // RECT / CIRCLE
+    if (!isDrawing.current || !newElRef.current) return;
     isDrawing.current = false;
 
     const el = useBoardStore.getState().elements[newElRef.current];
-    if (!el) return;
-
-    // minimum size — don't save tiny accidental clicks
-    if (el.width < 5 || el.height < 5) {
-      useBoardStore.getState().deleteElement(newElRef.current);
+    if (!el) {
       newElRef.current = null;
       return;
     }
 
-    // emit to other users via socket
+    if (el.width < 5 || el.height < 5) {
+      deleteElement(newElRef.current);
+      newElRef.current = null;
+      return;
+    }
+
     onElementAdd(el);
     newElRef.current = null;
-  }, [onElementAdd]);
+  }, [activeTool, boardId, onElementAdd]);
 
-  // ── Zoom ──────────────────────────────────────────────────────────────────
+  // ── Double click → text edit ────────────────────────────────────────────
+  const handleDblClick = useCallback(
+    (e: Konva.KonvaEventObject<MouseEvent>) => {
+      const elementId = e.target.id();
+      if (!elementId) return;
+      const el = useBoardStore.getState().elements[elementId];
+      if (!el) return;
+      if (el.type !== "text" && el.type !== "sticky") return;
+
+      const props = el.properties as any;
+      setEditingId(elementId);
+      setEditingText(props.content || "");
+      setTimeout(() => {
+        textareaRef.current?.focus();
+        textareaRef.current?.select();
+      }, 10);
+    },
+    [],
+  );
+
+  // ── Save text ───────────────────────────────────────────────────────────
+  const handleTextareaBlur = useCallback(() => {
+    if (!editingId) return;
+    const el = useBoardStore.getState().elements[editingId];
+    if (!el) {
+      setEditingId(null);
+      return;
+    }
+
+    const changes = { properties: { ...el.properties, content: editingText } };
+    updateElement(editingId, changes);
+    onElementUpdate(editingId, changes);
+    setEditingId(null);
+  }, [editingId, editingText, onElementUpdate]);
+
+  // ── Textarea position ───────────────────────────────────────────────────
+  const getTextareaStyle = (): React.CSSProperties | null => {
+    if (!editingId || !stageRef.current) return null;
+    const el = useBoardStore.getState().elements[editingId];
+    if (!el) return null;
+
+    const stage = stageRef.current;
+    const scale = stage.scaleX();
+    const stageBox = stage.container().getBoundingClientRect();
+    const props = el.properties as any;
+
+    return {
+      position: "fixed",
+      top: stageBox.top + el.y * scale + viewport.y,
+      left: stageBox.left + el.x * scale + viewport.x,
+      width: el.width * scale,
+      minHeight: el.height * scale,
+      fontSize: (props.fontSize || 16) * scale,
+      fontFamily: "sans-serif",
+      lineHeight: "1.5",
+      padding: 8 * scale,
+      border: "2px solid #4A90E2",
+      borderRadius: el.type === "sticky" ? 8 : 4,
+      background:
+        el.type === "sticky"
+          ? props.backgroundColor || "#FFE66D"
+          : "rgba(30, 41, 59, 0.95)",
+      color:
+        el.type === "sticky"
+          ? props.textColor || "#333"
+          : props.color || "#ffffff",
+      resize: "none",
+      outline: "none",
+      zIndex: 1000,
+      boxShadow: "0 8px 32px rgba(0,0,0,0.3)",
+    };
+  };
+
+  // ── Zoom ────────────────────────────────────────────────────────────────
   const handleWheel = useCallback(
     (e: Konva.KonvaEventObject<WheelEvent>) => {
       e.evt.preventDefault();
-
       const stage = stageRef.current;
       if (!stage) return;
 
       const oldScale = stage.scaleX();
       const pointer = stage.getPointerPosition()!;
-
-      /**
-       * Zoom toward mouse pointer — this feels natural
-       * Without this, zooming always centers on the canvas origin
-       *
-       * The math:
-       * 1. Find where the pointer is in the old coordinate space
-       * 2. Apply new scale
-       * 3. Adjust position so that point stays under the pointer
-       */
       const scaleBy = 1.05;
       const newScale =
         e.evt.deltaY < 0 ? oldScale * scaleBy : oldScale / scaleBy;
-
-      const clampedScale = Math.min(Math.max(newScale, 0.1), 5);
+      const clamped = Math.min(Math.max(newScale, 0.1), 5);
 
       const mousePointTo = {
         x: (pointer.x - stage.x()) / oldScale,
         y: (pointer.y - stage.y()) / oldScale,
       };
 
-      const newPos = {
-        x: pointer.x - mousePointTo.x * clampedScale,
-        y: pointer.y - mousePointTo.y * clampedScale,
-      };
-
-      setViewport({ scale: clampedScale, x: newPos.x, y: newPos.y });
+      setViewport({
+        scale: clamped,
+        x: pointer.x - mousePointTo.x * clamped,
+        y: pointer.y - mousePointTo.y * clamped,
+      });
     },
     [setViewport],
   );
 
-  // ── Keyboard shortcuts ────────────────────────────────────────────────────
+  // ── Keyboard ────────────────────────────────────────────────────────────
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      /**
-       * Delete selected elements with Backspace or Delete key
-       * This is standard behavior users expect from any canvas tool
-       */
+      if (editingId) return;
+      if ((e.target as HTMLElement).tagName === "TEXTAREA") return;
+
       if (
         (e.key === "Backspace" || e.key === "Delete") &&
         selectedIds.length > 0
       ) {
         selectedIds.forEach((id) => {
           onElementDelete(id);
-          useBoardStore.getState().deleteElement(id);
+          deleteElement(id);
         });
+        setSelectedIds([]);
+      }
+
+      if (e.key === "Escape") {
+        useBoardStore.getState().setActiveTool("select");
         setSelectedIds([]);
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selectedIds, onElementDelete]);
+  }, [selectedIds, onElementDelete, editingId]);
 
-  // ── Render elements ───────────────────────────────────────────────────────
+  // ── Render elements ─────────────────────────────────────────────────────
   const renderElement = (el: BoardElement) => {
     const isSelected = selectedIds.includes(el.id);
+    const isEditing = editingId === el.id;
     const props = el.properties as any;
 
-    const commonProps = {
-      key: el.id,
-      id: el.id,
-      x: el.x,
-      y: el.y,
-      width: el.width,
-      height: el.height,
-      rotation: el.rotation,
-      draggable: activeTool === "select",
-      /**
-       * onClick — select this element
-       * onDragEnd — update position after drag
-       *
-       * We update locally immediately (optimistic update)
-       * then emit to server. This makes the UI feel instant
-       * even if the server is slow.
-       */
-      onClick: () => setSelectedIds([el.id]),
+    const dragProps = {
+      draggable: activeTool === "select" && !isEditing,
+      onClick: (e: any) => {
+        e.cancelBubble = true;
+        setSelectedIds([el.id]);
+      },
       onDragEnd: (e: Konva.KonvaEventObject<DragEvent>) => {
         const changes = { x: e.target.x(), y: e.target.y() };
         updateElement(el.id, changes);
         onElementUpdate(el.id, changes);
       },
-      stroke: isSelected ? "#4A90E2" : props.stroke || "transparent",
-      strokeWidth: isSelected ? 2 : props.strokeWidth || 0,
+    };
+
+    const sel = {
+      stroke: isSelected ? "#4A90E2" : "transparent",
+      strokeWidth: isSelected ? 2 : 0,
     };
 
     switch (el.type) {
       case "rect":
         return (
           <Rect
-            {...commonProps}
+            key={el.id}
+            id={el.id}
+            x={el.x}
+            y={el.y}
+            width={el.width}
+            height={el.height}
+            rotation={el.rotation}
             fill={props.fill || "#4A90E2"}
-            opacity={props.opacity || 1}
-            cornerRadius={props.cornerRadius || 0}
+            opacity={props.opacity ?? 1}
+            cornerRadius={props.cornerRadius || 4}
+            {...sel}
+            {...dragProps}
           />
         );
 
       case "circle":
         return (
-          <Circle
-            {...commonProps}
+          <Ellipse
+            key={el.id}
+            id={el.id}
             x={el.x + el.width / 2}
             y={el.y + el.height / 2}
             radiusX={el.width / 2}
             radiusY={el.height / 2}
             fill={props.fill || "#E24A4A"}
-            opacity={props.opacity || 1}
+            opacity={props.opacity ?? 1}
+            {...sel}
+            {...dragProps}
           />
         );
 
       case "text":
         return (
           <Text
-            {...commonProps}
-            text={props.content || "Double click to edit"}
+            key={el.id}
+            id={el.id}
+            x={el.x}
+            y={el.y}
+            width={el.width}
+            opacity={isEditing ? 0 : 1}
+            text={props.content || "Double-click to edit"}
             fontSize={props.fontSize || 16}
-            fill={props.color || "#333333"}
+            fill={props.color || "#ffffff"}
             wrap="word"
+            {...sel}
+            {...dragProps}
           />
         );
 
@@ -297,30 +495,34 @@ export const Canvas = ({
         return (
           <Group
             key={el.id}
+            id={el.id}
             x={el.x}
             y={el.y}
-            draggable={activeTool === "select"}
-            onClick={() => setSelectedIds([el.id])}
-            onDragEnd={(e) => {
-              const changes = { x: e.target.x(), y: e.target.y() };
-              updateElement(el.id, changes);
-              onElementUpdate(el.id, changes);
-            }}
+            opacity={isEditing ? 0 : 1}
+            {...dragProps}
           >
             <Rect
               width={el.width}
               height={el.height}
               fill={props.backgroundColor || "#FFE66D"}
-              cornerRadius={4}
-              stroke={isSelected ? "#4A90E2" : "transparent"}
-              strokeWidth={isSelected ? 2 : 0}
+              cornerRadius={8}
+              shadowColor="rgba(0,0,0,0.2)"
+              shadowBlur={8}
+              shadowOffsetY={4}
+              {...sel}
+            />
+            <Rect
+              width={el.width}
+              height={28}
+              fill="rgba(0,0,0,0.08)"
+              cornerRadius={[8, 8, 0, 0]}
             />
             <Text
               x={8}
-              y={8}
+              y={36}
               width={el.width - 16}
-              height={el.height - 16}
-              text={props.content || "Sticky note"}
+              height={el.height - 44}
+              text={props.content || "Double-click to edit"}
               fontSize={14}
               fill={props.textColor || "#333"}
               wrap="word"
@@ -328,86 +530,135 @@ export const Canvas = ({
           </Group>
         );
 
+      case "pen":
+        return (
+          <Line
+            key={el.id}
+            id={el.id}
+            points={props.points || []}
+            stroke={props.stroke || "#4A90E2"}
+            strokeWidth={props.strokeWidth || 3}
+            tension={0.5}
+            lineCap="round"
+            lineJoin="round"
+            {...dragProps}
+          />
+        );
+
       default:
         return null;
     }
   };
 
-  return (
-    <Stage
-      ref={stageRef}
-      width={stageWidth}
-      height={stageHeight}
-      x={viewport.x}
-      y={viewport.y}
-      scaleX={viewport.scale}
-      scaleY={viewport.scale}
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onWheel={handleWheel}
-      /**
-       * cursor style changes based on active tool
-       * gives visual feedback about what mode you're in
-       */
-      style={{
-        cursor:
-          activeTool === "pan"
-            ? "grab"
-            : activeTool === "select"
-              ? "default"
-              : "crosshair",
-      }}
-    >
-      {/* Elements layer */}
-      <Layer>
-        {Object.values(elements)
-          .sort((a, b) => a.zIndex - b.zIndex)
-          .map(renderElement)}
-      </Layer>
+  const textareaStyle = getTextareaStyle();
 
-      {/* Cursor layer — always on top */}
-      <Layer>
-        {onlineUsers.map((user) =>
-          user.cursor ? (
-            <Group key={user.userId} x={user.cursor.x} y={user.cursor.y}>
-              {/* cursor dot */}
-              <Circle radius={5} fill={user.color} />
-              {/* username label */}
-              <Rect
-                x={8}
-                y={-8}
-                width={user.email.length * 7}
-                height={20}
-                fill={user.color}
-                cornerRadius={4}
-              />
-              <Text
-                x={12}
-                y={-5}
-                text={user.email.split("@")[0]}
-                fontSize={11}
-                fill="white"
-              />
-            </Group>
-          ) : null,
-        )}
-      </Layer>
-    </Stage>
+  return (
+    <div style={{ position: "relative", width: "100%", height: "100%" }}>
+      {Object.keys(elements).length === 0 && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+          <div className="text-center">
+            <p className="text-slate-600 text-sm">
+              Select a tool and start drawing
+            </p>
+            <p className="text-slate-700 text-xs mt-1">
+              Scroll to zoom · P for pen · R for rect
+            </p>
+          </div>
+        </div>
+      )}
+
+      <Stage
+        ref={stageRef}
+        width={stageWidth}
+        height={stageHeight}
+        x={viewport.x}
+        y={viewport.y}
+        scaleX={viewport.scale}
+        scaleY={viewport.scale}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onWheel={handleWheel}
+        onDblClick={handleDblClick}
+        style={{
+          cursor:
+            activeTool === "pan"
+              ? "grab"
+              : activeTool === "select"
+                ? "default"
+                : activeTool === "text" || activeTool === "sticky"
+                  ? "text"
+                  : "crosshair",
+          background: "#0f172a",
+        }}
+      >
+        {/* Live pen layer — drawn imperatively, zero React re-renders */}
+        <Layer ref={liveLayerRef} />
+
+        {/* All saved elements */}
+        <Layer>
+          {Object.values(elements)
+            .sort((a, b) => a.zIndex - b.zIndex)
+            .map(renderElement)}
+        </Layer>
+
+        {/* Other users cursors */}
+        <Layer listening={false}>
+          {onlineUsers.map((user) =>
+            user.cursor ? (
+              <Group key={user.userId} x={user.cursor.x} y={user.cursor.y}>
+                <Ellipse radiusX={5} radiusY={5} fill={user.color} />
+                <Rect
+                  x={10}
+                  y={-10}
+                  width={user.email.length * 6.5 + 8}
+                  height={20}
+                  fill={user.color}
+                  cornerRadius={4}
+                />
+                <Text
+                  x={14}
+                  y={-6}
+                  text={user.email.split("@")[0]}
+                  fontSize={11}
+                  fill="white"
+                />
+              </Group>
+            ) : null,
+          )}
+        </Layer>
+      </Stage>
+
+      {editingId && textareaStyle && (
+        <textarea
+          ref={textareaRef}
+          value={editingText}
+          onChange={(e) => setEditingText(e.target.value)}
+          onBlur={handleTextareaBlur}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") handleTextareaBlur();
+            e.stopPropagation();
+          }}
+          placeholder="Type here..."
+          style={textareaStyle as React.CSSProperties}
+        />
+      )}
+    </div>
   );
 };
 
-// default visual properties per element type
 const getDefaultProperties = (tool: ToolType): Record<string, unknown> => {
   switch (tool) {
     case "rect":
-      return { fill: "#4A90E2", stroke: "transparent", opacity: 1 };
+      return { fill: "#4A90E2", opacity: 1, cornerRadius: 4 };
     case "circle":
-      return { fill: "#E24A4A", stroke: "transparent", opacity: 1 };
+      return { fill: "#E24A4A", opacity: 1 };
     case "text":
-      return { content: "Text", fontSize: 16, color: "#333333" };
+      return { content: "", fontSize: 18, color: "#ffffff" };
     case "sticky":
-      return { content: "Note", backgroundColor: "#FFE66D", textColor: "#333" };
+      return { content: "", backgroundColor: "#FFE66D", textColor: "#333" };
+    case "pen":
+      return { points: [], stroke: "#4A90E2", strokeWidth: 3 };
     default:
       return {};
   }

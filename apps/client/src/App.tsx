@@ -1,11 +1,11 @@
-// apps/client/src/App.tsx
+// src/App.tsx
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Login } from "./pages/Login";
-import { Register } from "./pages/Register";
-import { Dashboard } from "./pages/Dashboard";
-import { Board } from "./pages/Board";
-import { useAuthStore } from "./store/auth.store";
+import { Login } from "@/pages/Login";
+import { Register } from "@/pages/Register";
+import { Dashboard } from "@/pages/Dashboard";
+import { Board } from "@/pages/Board";
+import { useAuthStore } from "@/store/auth.store";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -16,10 +16,6 @@ const queryClient = new QueryClient({
   },
 });
 
-/**
- * ProtectedRoute — redirects to /login if not authenticated
- * Wrap any route you want to protect with this component
- */
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { isAuth } = useAuthStore();
   return isAuth ? <>{children}</> : <Navigate to="/login" replace />;

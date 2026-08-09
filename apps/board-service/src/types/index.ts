@@ -39,7 +39,7 @@ export const updateMemberRoleSchema = z.object({
 });
 
 export const createElement = z.object({
-  type: z.enum(["rect", "circle", "text", "image", "arrow", "sticky"]),
+  type: z.enum(["rect", "circle", "text", "image", "arrow", "sticky", "pen"]),
   x: z.number(),
   y: z.number(),
   width: z.number().min(1),

@@ -93,5 +93,12 @@ router.delete(
   requireBoardAccess("editor"),
   elementController.bulkDeleteElements,
 );
+// add this line with other member routes
+router.get(
+  "/:id/members",
+  authenticate,
+  requireBoardAccess("viewer"),
+  boardController.getMembers,
+);
 
 export default router;

@@ -53,6 +53,7 @@ const io = new Server(server, {
    */
   pingTimeout: 5000,
   pingInterval: 10000,
+  allowEIO3: true,
 });
 
 // ── Middleware ─────────────────────────────────────────────────────────────

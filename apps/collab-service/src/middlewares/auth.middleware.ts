@@ -8,46 +8,61 @@ interface JwtPayload {
   email: string;
 }
 
-/**
- * Socket.io middleware works differently from Express middleware
- *
- * Express middleware: (req, res, next)
- * Socket.io middleware: (socket, next)
- *
- * The socket object contains everything about the connection:
- * socket.handshake.auth  → auth data sent by client during connection
- * socket.handshake.query → query params in the connection URL
- * socket.data            → where we store custom data (like userId)
- *
- * We verify the JWT here during the WebSocket handshake
- * so every subsequent socket event is already authenticated
- * No need to verify on every event — just once at connection time
- **/
 export const authenticateSocket = (
   socket: Socket,
   next: (err?: Error) => void,
 ) => {
   try {
     /**
-     * Client sends token in handshake auth:
-     * socket = io('http://localhost:3003', {
-     *   auth: { token: 'Bearer eyJ...' }
-     * })
+     * Try all three places the token could be:
+     * 1. socket.handshake.auth.token  — set by our useSocket hook
+     * 2. socket.handshake.headers.authorization — set by some clients
+     * 3. socket.handshake.query.token — fallback query param
      */
-    const token = socket.handshake.auth?.token?.replace("Bearer ", "");
+    const fromAuth = socket.handshake.auth?.token;
+    const fromHeader = socket.handshake.headers?.authorization;
+    const fromQuery = socket.handshake.query?.token as string;
 
-    if (!token) {
+    const raw = fromAuth || fromHeader || fromQuery;
+
+    console.log("[collab] Auth attempt:");
+    console.log(
+      "  fromAuth:  ",
+      fromAuth ? fromAuth.slice(0, 30) + "..." : "none",
+    );
+    console.log(
+      "  fromHeader:",
+      fromHeader ? fromHeader.slice(0, 30) + "..." : "none",
+    );
+    console.log(
+      "  fromQuery: ",
+      fromQuery ? fromQuery.slice(0, 30) + "..." : "none",
+    );
+
+    if (!raw) {
+      console.error("[collab] No token found in any location");
       return next(new Error("Authentication token required"));
     }
 
+    // strip Bearer prefix if present
+    const token = raw
+      .toString()
+      .replace(/^Bearer\s+/i, "")
+      .trim();
     const decoded = jwt.verify(token, env.JWT_SECRET) as JwtPayload;
 
-    // attach user info to socket — available in all event handlers
     socket.data.userId = decoded.userId;
     socket.data.email = decoded.email;
 
+    console.log("[collab] ✅ Socket authenticated for user:", decoded.email);
     next();
   } catch (err) {
-    next(new Error("Invalid or expired token"));
+    const message = (err as Error).message;
+    console.error("[collab] ❌ Socket auth failed:", message);
+
+    if (message.includes("expired")) {
+      return next(new Error("Token expired — please refresh the page"));
+    }
+    return next(new Error("Invalid token"));
   }
 };
