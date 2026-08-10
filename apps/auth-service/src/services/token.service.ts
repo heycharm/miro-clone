@@ -5,9 +5,8 @@ import type { JwtPayload } from "@miro/shared";
 
 export const tokenService = {
   generateAccessToken(payload: JwtPayload): string {
-    return jwt.sign(payload, env.JWT_SECRET, {
-      expiresIn: "1d", // ← change from 15m to 1d
-    });
+    console.log("[auth] Signing with secret:", env.JWT_SECRET);
+    return jwt.sign(payload, env.JWT_SECRET, { expiresIn: "1d" });
   },
 
   generateRefreshToken(payload: JwtPayload): string {
