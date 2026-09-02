@@ -76,7 +76,7 @@ export const ShareDialog = ({ boardId, open, onClose, myRole }: Props) => {
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="bg-slate-800 border-slate-700 text-white sm:max-w-md">
+      <DialogContent className="w-[95vw] max-w-2xl bg-slate-800 border-slate-700 text-white">
         <DialogHeader>
           <DialogTitle className="text-white flex items-center gap-2">
             <Users className="w-4 h-4 text-blue-400" />
@@ -96,10 +96,11 @@ export const ShareDialog = ({ boardId, open, onClose, myRole }: Props) => {
             onClick={handleCopyLink}
             className="h-7 text-slate-400 hover:text-white flex-shrink-0"
           >
-            {copied
-              ? <Check className="w-3.5 h-3.5 text-green-400" />
-              : <Copy className="w-3.5 h-3.5" />
-            }
+            {copied ? (
+              <Check className="w-3.5 h-3.5 text-green-400" />
+            ) : (
+              <Copy className="w-3.5 h-3.5" />
+            )}
           </Button>
         </div>
 
@@ -107,38 +108,39 @@ export const ShareDialog = ({ boardId, open, onClose, myRole }: Props) => {
         {isOwner && (
           <div className="space-y-2">
             <p className="text-sm text-slate-400 font-medium">Invite people</p>
-            <div className="flex gap-2">
+            <div className="flex w-full min-w-0 gap-2">
               <Input
                 placeholder="Enter email address"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleInvite()}
-                className="bg-slate-700/50 border-slate-600 text-white placeholder:text-slate-500 focus:border-blue-500 flex-1"
+                onKeyDown={(e) => e.key === "Enter" && handleInvite()}
+                className="min-w-0 flex-1 bg-slate-700/50 border-slate-600 text-white placeholder:text-slate-500 focus:border-blue-500"
               />
-              {/* Role selector */}
+
               <select
                 value={role}
-                onChange={(e) => setRole(e.target.value as 'editor' | 'viewer')}
-                className="bg-slate-700/50 border border-slate-600 text-white text-sm rounded-lg px-2 focus:outline-none focus:border-blue-500"
+                onChange={(e) => setRole(e.target.value as "editor" | "viewer")}
+                className="w-28 flex-shrink-0 bg-slate-700/50 border border-slate-600 text-white text-sm rounded-lg px-2 focus:outline-none focus:border-blue-500"
               >
                 <option value="editor">Editor</option>
                 <option value="viewer">Viewer</option>
               </select>
             </div>
 
-            {error && (
-              <p className="text-red-400 text-xs">{error}</p>
-            )}
+            {error && <p className="text-red-400 text-xs">{error}</p>}
 
             <Button
               onClick={handleInvite}
               disabled={!email.trim() || inviteMutation.isPending}
               className="w-full bg-blue-600 hover:bg-blue-500 text-white"
             >
-              {inviteMutation.isPending
-                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Inviting...</>
-                : 'Send invite'
-              }
+              {inviteMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Inviting...
+                </>
+              ) : (
+                "Send invite"
+              )}
             </Button>
           </div>
         )}
@@ -164,13 +166,13 @@ export const ShareDialog = ({ boardId, open, onClose, myRole }: Props) => {
                 >
                   <Avatar className="w-8 h-8 flex-shrink-0">
                     <AvatarFallback className="bg-slate-600 text-white text-xs">
-                      {member.userId.slice(0, 2).toUpperCase()}
+                      {member.email.slice(0, 2).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
 
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-white truncate">
-                      {member.userId === user?.id ? 'You' : member.userId}
+                      {member.email === user?.email ? "You" : member.email}
                     </p>
                   </div>
 
@@ -182,14 +184,16 @@ export const ShareDialog = ({ boardId, open, onClose, myRole }: Props) => {
                   </Badge>
 
                   {/* Remove button — owners can remove non-owners */}
-                  {isOwner && member.role !== 'owner' && member.userId !== user?.id && (
-                    <button
-                      onClick={() => removeMutation.mutate(member.userId)}
-                      className="w-6 h-6 flex items-center justify-center text-slate-500 hover:text-red-400 transition-colors flex-shrink-0"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  )}
+                  {isOwner &&
+                    member.role !== "owner" &&
+                    member.userId !== user?.id && (
+                      <button
+                        onClick={() => removeMutation.mutate(member.userId)}
+                        className="w-6 h-6 flex items-center justify-center text-slate-500 hover:text-red-400 transition-colors flex-shrink-0"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                 </div>
               ))}
             </div>

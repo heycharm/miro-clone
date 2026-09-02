@@ -99,7 +99,7 @@ const BoardCard = ({
         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
           <Button
             size="sm"
-            className="bg-white text-slate-900 hover:bg-slate-100 font-medium"
+            className="bg-white text-slate-900 hover:bg-slate-100 rounded-sm  font-medium"
             onClick={onOpen}
           >
             Open board
@@ -115,7 +115,7 @@ const BoardCard = ({
 
           {/* dropdown menu — stop propagation so card click doesn't fire */}
           <DropdownMenu>
-            <DropdownMenuTrigger  onClick={(e) => e.stopPropagation()}>
+            <DropdownMenuTrigger onClick={(e) => e.stopPropagation()}>
               <Button
                 variant="ghost"
                 size="icon"
@@ -238,7 +238,7 @@ export const Dashboard = () => {
             <Layers className="w-4 h-4 text-white" />
           </div>
           <span className="font-semibold text-white tracking-tight">
-            CollabBoard
+            Canvasly
           </span>
         </div>
 
@@ -254,7 +254,7 @@ export const Dashboard = () => {
         {/* user info at bottom */}
         <div className="p-3 border-t border-slate-700/50">
           <DropdownMenu>
-            <DropdownMenuTrigger >
+            <DropdownMenuTrigger>
               <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-700/60 transition-colors text-left">
                 <Avatar className="w-8 h-8">
                   <AvatarFallback className="bg-blue-600 text-white text-sm font-medium">
@@ -276,7 +276,7 @@ export const Dashboard = () => {
               side="top"
               className="w-52 bg-slate-800 border-slate-700 text-slate-200"
             >
-              <DropdownMenuSeparator className="bg-slate-700" />
+              {/* <DropdownMenuSeparator className="bg-slate-700" /> */}
               <DropdownMenuItem
                 onClick={handleLogout}
                 className="text-red-400 hover:bg-red-500/10 hover:text-red-300 cursor-pointer"
@@ -393,7 +393,7 @@ export const Dashboard = () => {
             </div>
 
             {/* public toggle */}
-            <div className="flex items-center justify-between p-3 bg-slate-700/30 rounded-lg border border-slate-600/50">
+            <div className="flex items-center justify-between p-3 rounded-lg border ">
               <div className="flex items-center gap-2.5">
                 {isPublic ? (
                   <Globe className="w-4 h-4 text-blue-400" />
@@ -430,7 +430,7 @@ export const Dashboard = () => {
             <Button
               variant="ghost"
               onClick={() => setCreateOpen(false)}
-              className="text-slate-400 hover:text-white hover:bg-slate-700"
+              className="text-white hover:text-white hover:bg-slate-700"
             >
               Cancel
             </Button>

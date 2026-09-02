@@ -48,11 +48,11 @@ export const Register = () => {
             <Layers className="w-5 h-5 text-white" />
           </div>
           <span className="text-white text-xl font-semibold tracking-tight">
-            CollabBoard
+            Canvasly
           </span>
         </div>
 
-        <Card className="border-slate-700/50 bg-slate-800/50 backdrop-blur-xl shadow-2xl">
+        <Card className="">
           <CardHeader className="space-y-1 pb-4">
             <CardTitle className="text-2xl text-white">
               Create account
@@ -120,7 +120,7 @@ export const Register = () => {
               <Button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium h-11"
+                className="w-full  text-white font-medium h-11"
               >
                 {loading ? (
                   <>
@@ -135,7 +135,7 @@ export const Register = () => {
           </CardContent>
 
           <CardFooter className="justify-center pb-6">
-            <p className="text-slate-400 text-sm">
+            <p className="text-white text-sm">
               Already have an account?{" "}
               <Link
                 to="/login"

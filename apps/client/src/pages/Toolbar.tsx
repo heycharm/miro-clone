@@ -18,6 +18,7 @@ import {
   Pencil,
   Minus,
   Plus,
+  Eraser,
 } from "lucide-react";
 
 const TOOLS: {
@@ -79,6 +80,13 @@ const SHAPE_TOOLS: typeof TOOLS = [
     shortcut: "S",
     hint: "Add a sticky note",
   },
+  {
+    type: "eraser",
+    label: "Eraser (E)",
+    icon: <Eraser className="w-4 h-4" />,
+    shortcut: "e",
+    hint: "Erase",
+  },
 ];
 
 export const Toolbar = () => {
@@ -95,6 +103,7 @@ export const Toolbar = () => {
       c: "circle",
       t: "text",
       s: "sticky",
+      e: "eraser",
     };
     if (map[e.key.toLowerCase()]) setActiveTool(map[e.key.toLowerCase()]);
   };
@@ -118,7 +127,7 @@ export const Toolbar = () => {
         <div className="bg-slate-800/95 backdrop-blur border border-slate-700/50 rounded-xl p-1.5 shadow-xl flex flex-col gap-0.5">
           {TOOLS.map((tool) => (
             <Tooltip key={tool.type}>
-              <TooltipTrigger >
+              <TooltipTrigger>
                 <button
                   onClick={() => setActiveTool(tool.type)}
                   className={`
@@ -184,7 +193,7 @@ export const Toolbar = () => {
       <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-20">
         <div className="bg-slate-800/95 backdrop-blur border border-slate-700/50 rounded-xl px-2 py-1.5 shadow-xl flex items-center gap-1">
           <Tooltip>
-            <TooltipTrigger >
+            <TooltipTrigger>
               <button
                 onClick={zoomOut}
                 className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-700/60 transition-all"
@@ -205,7 +214,7 @@ export const Toolbar = () => {
           </button>
 
           <Tooltip>
-            <TooltipTrigger >
+            <TooltipTrigger>
               <button
                 onClick={zoomIn}
                 className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-700/60 transition-all"

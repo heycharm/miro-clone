@@ -79,20 +79,20 @@ export const useSocket = (boardId: string) => {
       console.error("[socket] ❌ Error:", err.message);
     });
 
-    socket.on(
-      EVENTS.BOARD_STATE,
-      (data: {
-        elements: Record<string, BoardElement>;
-        users: UserPresence[];
-      }) => {
-        console.log(
-          "[socket] Board state received:",
-          Object.keys(data.elements).length,
-          "elements",
-        );
-        setOnlineUsers(data.users);
-      },
+socket.on(
+  EVENTS.BOARD_STATE,
+  (data: { elements: Record<string, BoardElement>; users: UserPresence[] }) => {
+    /**
+     * Deduplicate users by userId before setting
+     * Server might send duplicates if presence wasn't cleaned up properly
+     */
+    const uniqueUsers = data.users.filter(
+      (user, index, self) =>
+        index === self.findIndex((u) => u.userId === user.userId),
     );
+    setOnlineUsers(uniqueUsers);
+  },
+);
 
     socket.on(
       EVENTS.ELEMENT_ADDED,
@@ -123,8 +123,17 @@ export const useSocket = (boardId: string) => {
     );
 
     socket.on(EVENTS.USER_JOINED, ({ user }: { user: UserPresence }) => {
-      console.log("[socket] User joined:", user.email);
-      setOnlineUsers([...useBoardStore.getState().onlineUsers, user]);
+      const current = useBoardStore.getState().onlineUsers;
+
+      /**
+       * Check if user already exists before adding
+       * Without this check, every re-render or reconnect
+       * adds a duplicate entry for the same user
+       */
+      const alreadyExists = current.some((u) => u.userId === user.userId);
+      if (!alreadyExists) {
+        setOnlineUsers([...current, user]);
+      }
     });
 
     socket.on(EVENTS.USER_LEFT, ({ userId }: { userId: string }) => {

@@ -197,14 +197,14 @@ export const Board = () => {
               )}
             </div>
           </div>
-          <div className="flex items-center gap-1.5">
+          {/* <div className="flex items-center gap-1.5">
             <div
               className={`w-2 h-2 rounded-full ${isConnected ? "bg-green-400" : "bg-red-400"}`}
             />
             <span className="text-xs text-slate-400">
               {isConnected ? "Live" : "Offline"}
             </span>
-          </div>
+          </div> */}
         </TooltipProvider>
       </header>
 

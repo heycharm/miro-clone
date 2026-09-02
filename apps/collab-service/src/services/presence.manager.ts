@@ -58,25 +58,27 @@ class PresenceManager {
     return this.COLORS[Math.abs(hash) % this.COLORS.length];
   }
 
-  join(
-    boardId: string,
-    user: Omit<UserPresence, "cursor" | "color" | "joinedAt">,
-  ): UserPresence {
-    if (!this.presence.has(boardId)) {
-      this.presence.set(boardId, new Map());
-    }
-
-    const userPresence: UserPresence = {
-      ...user,
-      cursor: null,
-      color: this.getUserColor(user.userId),
-      joinedAt: Date.now(),
-    };
-
-    this.presence.get(boardId)!.set(user.userId, userPresence);
-
-    return userPresence;
+join(boardId: string, user: Omit<UserPresence, 'cursor' | 'color' | 'joinedAt'>): UserPresence {
+  if (!this.presence.has(boardId)) {
+    this.presence.set(boardId, new Map());
   }
+
+  /**
+   * Using a Map with userId as key means the same user
+   * can never appear twice — Map.set() overwrites existing entries
+   * So if a user reconnects quickly, their old entry is replaced
+   * not duplicated
+   */
+  const userPresence: UserPresence = {
+    ...user,
+    cursor:   null,
+    color:    this.getUserColor(user.userId),
+    joinedAt: Date.now(),
+  };
+
+  this.presence.get(boardId)!.set(user.userId, userPresence);
+  return userPresence;
+}
 
   updateCursor(
     boardId: string,

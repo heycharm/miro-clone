@@ -50,11 +50,11 @@ export const Login = () => {
             <Layers className="w-5 h-5 text-white" />
           </div>
           <span className="text-white text-xl font-semibold tracking-tight">
-            CollabBoard
+            Canvasly
           </span>
         </div>
 
-        <Card className="border-slate-700/50 bg-slate-800/50 backdrop-blur-xl shadow-2xl">
+        <Card className=" ">
           <CardHeader className="space-y-1 pb-4">
             <CardTitle className="text-2xl text-white">Welcome back</CardTitle>
             <CardDescription className="text-slate-400">
@@ -120,7 +120,7 @@ export const Login = () => {
           </CardContent>
 
           <CardFooter className="justify-center pb-6">
-            <p className=" text-sm">
+            <p className=" text-sm text-white">
               Don't have an account?{" "}
               <Link
                 to="/register"

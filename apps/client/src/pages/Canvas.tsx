@@ -34,6 +34,8 @@ export const Canvas = ({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const eraserPoints = useRef<number[]>([]);
+  const eraserLineRef = useRef<Konva.Line | null>(null);
 
   const {
     elements,
@@ -125,6 +127,31 @@ export const Canvas = ({
         setTimeout(() => textareaRef.current?.focus(), 10);
         return;
       }
+      if (activeTool === "eraser") {
+        /**
+         * Eraser works by detecting which elements overlap
+         * with the eraser path and deleting them
+         *
+         * We draw a temporary red dashed line to show the eraser path
+         * then on mouseUp we check every element for intersection
+         */
+        isDrawing.current = true;
+        eraserPoints.current = [pos.x, pos.y];
+
+        const line = new Konva.Line({
+          points: [pos.x, pos.y],
+          stroke: "rgba(255,100,100,0.6)",
+          strokeWidth: 20,
+          lineCap: "round",
+          lineJoin: "round",
+          dash: [1, 0],
+          globalCompositeOperation: "source-over",
+        });
+
+        liveLayerRef.current?.add(line);
+        eraserLineRef.current = line;
+        return;
+      }
 
       if (activeTool === "pen") {
         /**
@@ -178,33 +205,86 @@ export const Canvas = ({
   const handleMouseMove = useCallback(
     (e: Konva.KonvaEventObject<MouseEvent>) => {
       const pos = getPos();
+
       onCursorMove(pos.x, pos.y);
 
       // PAN
       if (activeTool === "pan" && isPanning.current) {
         const dx = e.evt.clientX - lastPanPos.current.x;
         const dy = e.evt.clientY - lastPanPos.current.y;
-        lastPanPos.current = { x: e.evt.clientX, y: e.evt.clientY };
+
+        lastPanPos.current = {
+          x: e.evt.clientX,
+          y: e.evt.clientY,
+        };
+
         setViewport({
           x: viewport.x + dx,
           y: viewport.y + dy,
         });
+
         return;
       }
 
-      // PEN — no newElRef check needed, pen manages its own refs
+      // PEN
       if (activeTool === "pen" && isDrawing.current) {
         penPoints.current.push(pos.x, pos.y);
+
         liveLineRef.current?.points(penPoints.current);
         liveLayerRef.current?.batchDraw();
+
+        return;
+      }
+
+      // ERASER
+      if (activeTool === "eraser" && isDrawing.current) {
+        eraserPoints.current.push(pos.x, pos.y);
+
+        eraserLineRef.current?.points(eraserPoints.current);
+        liveLayerRef.current?.batchDraw();
+
+        /**
+         * Check every element to see if the eraser overlaps it.
+         * If any eraser point falls within an element's bounds,
+         * delete that element.
+         */
+        const currentElements = useBoardStore.getState().elements;
+
+        Object.values(currentElements).forEach((el) => {
+          const elementWidth = Math.abs(el.width ?? 0);
+          const elementHeight = Math.abs(el.height ?? 0);
+
+          const minX = Math.min(el.x, el.x + elementWidth);
+          const maxX = Math.max(el.x, el.x + elementWidth);
+          const minY = Math.min(el.y, el.y + elementHeight);
+          const maxY = Math.max(el.y, el.y + elementHeight);
+
+          const erasing = eraserPoints.current.some((_, i) => {
+            if (i % 2 !== 0) return false;
+
+            const ex = eraserPoints.current[i];
+            const ey = eraserPoints.current[i + 1];
+
+            return ex >= minX && ex <= maxX && ey >= minY && ey <= maxY;
+          });
+
+          if (erasing) {
+            deleteElement(el.id);
+            onElementDelete(el.id);
+          }
+        });
+
         return;
       }
 
       // RECT / CIRCLE
-      if (!isDrawing.current || !newElRef.current) return;
+      if (!isDrawing.current || !newElRef.current) {
+        return;
+      }
 
       const width = pos.x - startPos.current.x;
       const height = pos.y - startPos.current.y;
+
       updateElement(newElRef.current, {
         width: Math.abs(width),
         height: Math.abs(height),
@@ -212,7 +292,15 @@ export const Canvas = ({
         y: height < 0 ? pos.y : startPos.current.y,
       });
     },
-    [activeTool, viewport],
+    [
+      activeTool,
+      getPos,
+      onCursorMove,
+      setViewport,
+      deleteElement,
+      onElementDelete,
+      updateElement,
+    ],
   );
 
   // ── Mouse Up ────────────────────────────────────────────────────────────
@@ -263,6 +351,15 @@ export const Canvas = ({
       addElement(el);
       onElementAdd(el);
       penPoints.current = [];
+      return;
+    }
+
+    if (activeTool === "eraser" && isDrawing.current) {
+      isDrawing.current = false;
+      eraserLineRef.current?.destroy();
+      eraserLineRef.current = null;
+      liveLayerRef.current?.batchDraw();
+      eraserPoints.current = [];
       return;
     }
 
@@ -586,9 +683,11 @@ export const Canvas = ({
               ? "grab"
               : activeTool === "select"
                 ? "default"
-                : activeTool === "text" || activeTool === "sticky"
-                  ? "text"
-                  : "crosshair",
+                : activeTool === "eraser"
+                  ? "cell" // ← add this
+                  : activeTool === "text" || activeTool === "sticky"
+                    ? "text"
+                    : "crosshair",
           background: "#0f172a",
         }}
       >
@@ -659,6 +758,8 @@ const getDefaultProperties = (tool: ToolType): Record<string, unknown> => {
       return { content: "", backgroundColor: "#FFE66D", textColor: "#333" };
     case "pen":
       return { points: [], stroke: "#4A90E2", strokeWidth: 3 };
+    case "eraser":
+      return {};
     default:
       return {};
   }

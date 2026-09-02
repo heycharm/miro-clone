@@ -1,7 +1,7 @@
 // src/types/index.ts
 // apps/client/src/types/index.ts
 export type ElementType = 'rect' | 'circle' | 'text' | 'image' | 'arrow' | 'sticky' | 'pen';
-export type ToolType    = 'select' | 'rect' | 'circle' | 'text' | 'sticky' | 'pan' | 'pen';
+export type ToolType = 'select' | 'rect' | 'circle' | 'text' | 'sticky' | 'pan' | 'pen' | 'eraser';
 
 // rest stays the same
   export type BoardRole = "owner" | "editor" | "viewer";
