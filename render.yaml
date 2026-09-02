@@ -1,0 +1,79 @@
+# render.yaml
+services:
+  - type: web
+    name: auth-service
+    runtime: docker
+    dockerfilePath: apps/auth-service/Dockerfile
+    dockerContext: apps/auth-service
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_EXPIRES_IN
+        value: 1d
+
+  - type: web
+    name: board-service
+    runtime: docker
+    dockerfilePath: apps/board-service/Dockerfile
+    dockerContext: apps/board-service
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3002
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: AUTH_SERVICE_URL
+        sync: false
+
+  - type: web
+    name: collab-service
+    runtime: docker
+    dockerfilePath: apps/collab-service/Dockerfile
+    dockerContext: apps/collab-service
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3003
+      - key: REDIS_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: CLIENT_URL
+        sync: false
+
+  - type: web
+    name: api-gateway
+    runtime: docker
+    dockerfilePath: apps/api-gateway/Dockerfile
+    dockerContext: apps/api-gateway
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 4000
+      - key: AUTH_SERVICE_URL
+        sync: false
+      - key: BOARD_SERVICE_URL
+        sync: false
+      - key: COLLAB_SERVICE_URL
+        sync: false
+      - key: CLIENT_URL
+        sync: false
