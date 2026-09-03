@@ -41,7 +41,7 @@ export const Board = () => {
     queryFn: () => boardApi.getBoard(boardId!).then((r) => r.data.board),
     enabled: !!boardId,
   });
-  const { isConnected } = useSocket(boardId!);
+  // const { isConnected } = useSocket(boardId!);
 
   // apps/client/src/pages/Board.tsx
 
