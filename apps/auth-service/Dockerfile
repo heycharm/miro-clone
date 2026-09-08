@@ -1,41 +1,34 @@
-# apps/auth-service/Dockerfile
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm ci --only=production
-
 COPY . .
-RUN npm run build
 
-# ── Production image ──────────────────────────────────────────────────────
+RUN npm ci
+
+RUN npx turbo run build --filter=auth-service...
+
+
 FROM node:20-alpine AS production
-
-# /**
-#  * Multi-stage build — why?
-#  * 
-#  * Stage 1 (builder): installs ALL deps including devDependencies,
-#  * compiles TypeScript → JavaScript
-#  * 
-#  * Stage 2 (production): copies only the compiled JS + production deps
-#  * Final image has NO TypeScript, NO ts-node, NO source maps
-#  * 
-#  * Result: image goes from ~800MB → ~150MB
-#  * Smaller image = faster deploys, less attack surface, cheaper storage
-#  */
 
 WORKDIR /app
 
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./
+COPY package.json package-lock.json ./
 
-# non-root user for security
-# running as root inside a container is a security risk
-# if someone escapes the container they'd have root on the host
+COPY apps/auth-service/package.json ./apps/auth-service/package.json
+COPY packages/shared/package.json ./packages/shared/package.json
+
+RUN npm ci --workspace=auth-service --include-workspace-root=false
+
+COPY --from=builder /app/apps/auth-service/dist ./apps/auth-service/dist
+COPY --from=builder /app/apps/auth-service/.sequelizerc ./apps/auth-service/.sequelizerc
+COPY --from=builder /app/apps/auth-service/src/migrations ./apps/auth-service/src/migrations
+COPY --from=builder /app/apps/auth-service/src/config/sequelize.config.js ./apps/auth-service/src/config/sequelize.config.js
+
+COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
+
 USER node
 
 EXPOSE 3001
 
-CMD ["node", "dist/index.js"]
+CMD ["node", "apps/auth-service/dist/index.js"]
