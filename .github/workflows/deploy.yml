@@ -1,73 +1,75 @@
-name: Deploy to Oracle Cloud
+name: Build and Deploy
+
+permissions:
+  contents: read
+  packages: write
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
         with:
-          node-version: '20'
-          cache: 'npm'
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install and build
+      - name: Build Auth Service
         run: |
-          npm install
-          npm run build
+          docker build \
+            -f apps/auth-service/Dockerfile \
+            -t ghcr.io/${{ github.repository_owner }}/miro-auth:latest .
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build Docker images
+      - name: Build Board Service
         run: |
-          docker build -t auth-service:latest   apps/auth-service
-          docker build -t board-service:latest  apps/board-service
-          docker build -t collab-service:latest apps/collab-service
-          docker build -t api-gateway:latest    apps/api-gateway
+          docker build \
+            -f apps/board-service/Dockerfile \
+            -t ghcr.io/${{ github.repository_owner }}/miro-board:latest .
 
-      - name: Save Docker images
+      - name: Build Collab Service
         run: |
-          docker save auth-service:latest   | gzip > auth-service.tar.gz
-          docker save board-service:latest  | gzip > board-service.tar.gz
-          docker save collab-service:latest | gzip > collab-service.tar.gz
-          docker save api-gateway:latest    | gzip > api-gateway.tar.gz
+          docker build \
+            -f apps/collab-service/Dockerfile \
+            -t ghcr.io/${{ github.repository_owner }}/miro-collab:latest .
 
-      - name: Copy images to VM
-        uses: appleboy/scp-action@v0.1.7
+      - name: Build API Gateway
+        run: |
+          docker build \
+            -f apps/api-gateway/Dockerfile \
+            -t ghcr.io/${{ github.repository_owner }}/miro-gateway:latest .
+
+      - name: Push Docker Images
+        run: |
+          docker push ghcr.io/${{ github.repository_owner }}/miro-auth:latest
+          docker push ghcr.io/${{ github.repository_owner }}/miro-board:latest
+          docker push ghcr.io/${{ github.repository_owner }}/miro-collab:latest
+          docker push ghcr.io/${{ github.repository_owner }}/miro-gateway:latest
+
+      - name: Deploy to VM
+        uses: appleboy/ssh-action@v1.2.0
         with:
-          host:        ${{ secrets.VM_HOST }}
-          username:    ubuntu
-          key:         ${{ secrets.VM_SSH_KEY }}
-          source:      "*.tar.gz,docker-compose.prod.yml"
-          target:      ~/miro-clone
-
-      - name: Deploy on VM
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host:     ${{ secrets.VM_HOST }}
-          username: ubuntu
-          key:      ${{ secrets.VM_SSH_KEY }}
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
           script: |
             cd ~/miro-clone
 
-            # load new images
-            docker load < auth-service.tar.gz
-            docker load < board-service.tar.gz
-            docker load < collab-service.tar.gz
-            docker load < api-gateway.tar.gz
+            docker login ghcr.io \
+              -u ${{ github.repository_owner }} \
+              -p ${{ secrets.GITHUB_TOKEN }}
 
-            # restart services with new images
-            docker compose -f docker-compose.prod.yml --env-file .env up -d
+            docker compose -f docker-compose.prod.yml pull
 
-            # clean up tar files
-            rm -f *.tar.gz
+            docker compose -f docker-compose.prod.yml up -d
 
-            echo "✅ Deployment complete"
+            docker image prune -f
