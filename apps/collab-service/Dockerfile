@@ -6,7 +6,8 @@ COPY . .
 
 RUN npm ci
 
-RUN npx turbo run build --filter=collab-service...
+RUN npx turbo run build --filter=@miro/shared
+RUN npx turbo run build --filter=collab-service
 
 
 FROM node:20-alpine AS production
