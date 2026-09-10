@@ -13,7 +13,6 @@ interface CanvasProps {
   onElementDelete: (id: string) => void;
   onCursorMove: (x: number, y: number) => void;
 }
-
 export const Canvas = ({
   boardId,
   onElementAdd,
@@ -21,6 +20,16 @@ export const Canvas = ({
   onElementDelete,
   onCursorMove,
 }: CanvasProps) => {
+  const selectionRect = useRef({
+    x: 0,
+    y: 0,
+    width: 0,
+    height: 0,
+    visible: false,
+  });
+  const selectionRectRef = useRef<Konva.Rect | null>(null);
+  const selectionLayerRef = useRef<Konva.Layer | null>(null);
+  const isSelecting = useRef(false);
   const stageRef = useRef<Konva.Stage>(null);
   const isDrawing = useRef(false);
   const startPos = useRef({ x: 0, y: 0 });
@@ -30,7 +39,10 @@ export const Canvas = ({
   const lastPanPos = useRef({ x: 0, y: 0 });
   const liveLineRef = useRef<Konva.Line | null>(null);
   const liveLayerRef = useRef<Konva.Layer | null>(null);
-
+  const dragStartPositions = useRef<Record<string, { x: number; y: number }>>(
+    {},
+  );
+  const penStartPos = useRef({ x: 0, y: 0 });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -74,11 +86,50 @@ export const Canvas = ({
       }
 
       if (activeTool === "select") {
-        if (clickedOnEmpty) setSelectedIds([]);
+        if (clickedOnEmpty) {
+          // start drag selection
+          isSelecting.current = true;
+          const pos = getPos();
+          selectionRect.current = {
+            x: pos.x,
+            y: pos.y,
+            width: 0,
+            height: 0,
+            visible: true,
+          };
+
+          if (!selectionRectRef.current) {
+            const rect = new Konva.Rect({
+              fill: "rgba(74, 144, 226, 0.1)",
+              stroke: "#4A90E2",
+              strokeWidth: 1,
+              dash: [4, 4],
+              visible: false,
+            });
+            selectionLayerRef.current?.add(rect);
+            selectionRectRef.current = rect;
+          }
+
+          selectionRectRef.current.visible(true);
+          selectionRectRef.current.x(pos.x);
+          selectionRectRef.current.y(pos.y);
+          selectionRectRef.current.width(0);
+          selectionRectRef.current.height(0);
+          selectionLayerRef.current?.batchDraw();
+
+          setSelectedIds([]);
+        }
         return;
       }
 
       if (activeTool === "text") {
+        /**
+         * Only create a new text element if clicking on empty canvas
+         * If clicking on an existing element, let handleDblClick handle it
+         */
+        const clickedOnEmpty = e.target === e.target.getStage();
+        if (!clickedOnEmpty) return; // ← add this check
+
         const id = uuid();
         const el: BoardElement = {
           id,
@@ -102,6 +153,9 @@ export const Canvas = ({
       }
 
       if (activeTool === "sticky") {
+        const clickedOnEmpty = e.target === e.target.getStage();
+        if (!clickedOnEmpty) return; // ← add this check
+
         const id = uuid();
         const el: BoardElement = {
           id,
@@ -161,6 +215,10 @@ export const Canvas = ({
          */
         isDrawing.current = true;
         penPoints.current = [pos.x, pos.y];
+        penStartPos.current = {
+          x: pos.x,
+          y: pos.y,
+        };
 
         const line = new Konva.Line({
           points: [pos.x, pos.y],
@@ -218,10 +276,38 @@ export const Canvas = ({
           y: e.evt.clientY,
         };
 
+        // Use functional update so rapid mouse events
+        // don't operate on a stale viewport.
+        const currentViewport = useBoardStore.getState().viewport;
+
         setViewport({
-          x: viewport.x + dx,
-          y: viewport.y + dy,
+          x: currentViewport.x + dx,
+          y: currentViewport.y + dy,
         });
+
+        return;
+      }
+
+      // DRAG SELECTION
+      if (activeTool === "select" && isSelecting.current) {
+        const sx = selectionRect.current.x;
+        const sy = selectionRect.current.y;
+
+        const x = Math.min(pos.x, sx);
+        const y = Math.min(pos.y, sy);
+        const width = Math.abs(pos.x - sx);
+        const height = Math.abs(pos.y - sy);
+
+        const rect = selectionRectRef.current;
+
+        if (rect) {
+          rect.x(x);
+          rect.y(y);
+          rect.width(width);
+          rect.height(height);
+
+          selectionLayerRef.current?.batchDraw();
+        }
 
         return;
       }
@@ -243,30 +329,24 @@ export const Canvas = ({
         eraserLineRef.current?.points(eraserPoints.current);
         liveLayerRef.current?.batchDraw();
 
-        /**
-         * Check every element to see if the eraser overlaps it.
-         * If any eraser point falls within an element's bounds,
-         * delete that element.
-         */
         const currentElements = useBoardStore.getState().elements;
 
+        // Only check the latest eraser point instead of
+        // checking every previous point on every mousemove.
+        const ex = pos.x;
+        const ey = pos.y;
+
         Object.values(currentElements).forEach((el) => {
-          const elementWidth = Math.abs(el.width ?? 0);
-          const elementHeight = Math.abs(el.height ?? 0);
+          const width = Math.abs(el.width ?? 0);
+          const height = Math.abs(el.height ?? 0);
 
-          const minX = Math.min(el.x, el.x + elementWidth);
-          const maxX = Math.max(el.x, el.x + elementWidth);
-          const minY = Math.min(el.y, el.y + elementHeight);
-          const maxY = Math.max(el.y, el.y + elementHeight);
+          const minX = Math.min(el.x, el.x + width);
+          const maxX = Math.max(el.x, el.x + width);
 
-          const erasing = eraserPoints.current.some((_, i) => {
-            if (i % 2 !== 0) return false;
+          const minY = Math.min(el.y, el.y + height);
+          const maxY = Math.max(el.y, el.y + height);
 
-            const ex = eraserPoints.current[i];
-            const ey = eraserPoints.current[i + 1];
-
-            return ex >= minX && ex <= maxX && ey >= minY && ey <= maxY;
-          });
+          const erasing = ex >= minX && ex <= maxX && ey >= minY && ey <= maxY;
 
           if (erasing) {
             deleteElement(el.id);
@@ -304,97 +384,208 @@ export const Canvas = ({
   );
 
   // ── Mouse Up ────────────────────────────────────────────────────────────
-  const handleMouseUp = useCallback(() => {
-    isPanning.current = false;
 
-    // PEN — handle separately, doesn't use newElRef
-    if (activeTool === "pen" && isDrawing.current) {
-      isDrawing.current = false;
+const handleMouseUp = useCallback(() => {
+  isPanning.current = false;
 
-      if (penPoints.current.length < 6) {
-        liveLineRef.current?.destroy();
-        liveLineRef.current = null;
-        liveLayerRef.current?.batchDraw();
-        penPoints.current = [];
-        return;
-      }
+  // ─────────────────────────────────────────────
+  // PEN
+  // ─────────────────────────────────────────────
+  if (activeTool === "pen" && isDrawing.current) {
+    isDrawing.current = false;
 
-      // remove the live line from the imperative layer
-      liveLineRef.current?.destroy();
-      liveLineRef.current = null;
-      liveLayerRef.current?.batchDraw();
+    const points = penPoints.current;
 
-      // calculate bounding box
-      const points = penPoints.current;
-      const xs = points.filter((_, i) => i % 2 === 0);
-      const ys = points.filter((_, i) => i % 2 !== 0);
-      const minX = Math.min(...xs);
-      const minY = Math.min(...ys);
-      const maxX = Math.max(...xs);
-      const maxY = Math.max(...ys);
+    // Remove temporary/live line first
+    liveLineRef.current?.destroy();
+    liveLineRef.current = null;
+    liveLayerRef.current?.batchDraw();
 
-      const id = uuid();
-      const el: BoardElement = {
-        id,
-        boardId,
-        type: "pen",
-        x: minX,
-        y: minY,
-        width: maxX - minX || 1,
-        height: maxY - minY || 1,
-        rotation: 0,
-        zIndex: Object.keys(useBoardStore.getState().elements).length,
-        createdBy: "",
-        properties: { points, stroke: "#4A90E2", strokeWidth: 3 },
-      };
-
-      addElement(el);
-      onElementAdd(el);
+    // Ignore tiny strokes
+    if (points.length < 6) {
       penPoints.current = [];
       return;
     }
 
-    if (activeTool === "eraser" && isDrawing.current) {
-      isDrawing.current = false;
-      eraserLineRef.current?.destroy();
-      eraserLineRef.current = null;
-      liveLayerRef.current?.batchDraw();
-      eraserPoints.current = [];
-      return;
-    }
+    // Find bounding box
+    const xs = points.filter((_, i) => i % 2 === 0);
+    const ys = points.filter((_, i) => i % 2 !== 0);
 
-    // RECT / CIRCLE
-    if (!isDrawing.current || !newElRef.current) return;
+    const minX = Math.min(...xs);
+    const minY = Math.min(...ys);
+    const maxX = Math.max(...xs);
+    const maxY = Math.max(...ys);
+
+    // Convert absolute points → local points
+    const localPoints = points.map((value, index) => {
+      return index % 2 === 0 ? value - minX : value - minY;
+    });
+
+    const id = uuid();
+
+    const el: BoardElement = {
+      id,
+      boardId,
+      type: "pen",
+
+      x: minX,
+      y: minY,
+
+      width: Math.max(maxX - minX, 1),
+      height: Math.max(maxY - minY, 1),
+
+      rotation: 0,
+
+      zIndex: Object.keys(useBoardStore.getState().elements).length,
+
+      createdBy: "",
+
+      properties: {
+        points: localPoints,
+        stroke: "#4A90E2",
+        strokeWidth: 3,
+      },
+    };
+
+    addElement(el);
+    onElementAdd(el);
+
+    // Clear drawing state
+    penPoints.current = [];
+  }
+
+  // ─────────────────────────────────────────────
+  // ERASER
+  // ─────────────────────────────────────────────
+  if (activeTool === "eraser" && isDrawing.current) {
     isDrawing.current = false;
 
-    const el = useBoardStore.getState().elements[newElRef.current];
-    if (!el) {
-      newElRef.current = null;
+    eraserLineRef.current?.destroy();
+    eraserLineRef.current = null;
+
+    liveLayerRef.current?.batchDraw();
+
+    eraserPoints.current = [];
+    return;
+  }
+
+  // ─────────────────────────────────────────────
+  // DRAG SELECTION
+  // ─────────────────────────────────────────────
+  if (activeTool === "select" && isSelecting.current) {
+    isSelecting.current = false;
+
+    selectionRectRef.current?.visible(false);
+    selectionLayerRef.current?.batchDraw();
+
+    const box = selectionRectRef.current?.getClientRect();
+
+    if (!box) {
+      setSelectedIds([]);
       return;
     }
 
-    if (el.width < 5 || el.height < 5) {
-      deleteElement(newElRef.current);
-      newElRef.current = null;
-      return;
-    }
+    const currentViewport = useBoardStore.getState().viewport;
 
-    onElementAdd(el);
+    const { x: viewportX, y: viewportY, scale } = currentViewport;
+
+    const selected = Object.values(useBoardStore.getState().elements).filter(
+      (el) => {
+        const elementWidth = Math.abs(el.width ?? 0);
+        const elementHeight = Math.abs(el.height ?? 0);
+
+        const elementX = el.x * scale + viewportX;
+
+        const elementY = el.y * scale + viewportY;
+
+        const elementScreenWidth = elementWidth * scale;
+
+        const elementScreenHeight = elementHeight * scale;
+
+        return (
+          elementX < box.x + box.width &&
+          elementX + elementScreenWidth > box.x &&
+          elementY < box.y + box.height &&
+          elementY + elementScreenHeight > box.y
+        );
+      },
+    );
+
+    setSelectedIds(selected.map((el) => el.id));
+
+    return;
+  }
+
+  // ─────────────────────────────────────────────
+  // RECT / CIRCLE
+  // ─────────────────────────────────────────────
+  if (!isDrawing.current || !newElRef.current) {
+    return;
+  }
+
+  isDrawing.current = false;
+
+  const elementId = newElRef.current;
+
+  const el = useBoardStore.getState().elements[elementId];
+
+  if (!el) {
     newElRef.current = null;
-  }, [activeTool, boardId, onElementAdd]);
+    return;
+  }
 
-  // ── Double click → text edit ────────────────────────────────────────────
+  const elementWidth = Math.abs(el.width ?? 0);
+  const elementHeight = Math.abs(el.height ?? 0);
+
+  if (elementWidth < 5 || elementHeight < 5) {
+    deleteElement(elementId);
+    newElRef.current = null;
+    return;
+  }
+
+  onElementAdd(el);
+
+  newElRef.current = null;
+}, [
+  activeTool,
+  boardId,
+  addElement,
+  deleteElement,
+  onElementAdd,
+  setSelectedIds,
+]);
+
   const handleDblClick = useCallback(
     (e: Konva.KonvaEventObject<MouseEvent>) => {
-      const elementId = e.target.id();
+      e.cancelBubble = true;
+
+      let target = e.target;
+
+      // If we double-click a child of a sticky Group,
+      // walk up until we find the element node.
+      let elementId = target.id();
+
+      if (!elementId) {
+        const parent = target.findAncestor((node) => !!node.id(), true);
+
+        if (parent) {
+          elementId = parent.id();
+        }
+      }
+
       if (!elementId) return;
+
       const el = useBoardStore.getState().elements[elementId];
+
       if (!el) return;
+
       if (el.type !== "text" && el.type !== "sticky") return;
 
       const props = el.properties as any;
+
       setEditingId(elementId);
       setEditingText(props.content || "");
+
       setTimeout(() => {
         textareaRef.current?.focus();
         textareaRef.current?.select();
@@ -408,6 +599,17 @@ export const Canvas = ({
     if (!editingId) return;
     const el = useBoardStore.getState().elements[editingId];
     if (!el) {
+      setEditingId(null);
+      return;
+    }
+
+    /**
+     * If user didn't type anything — delete the element
+     * Don't leave empty placeholder elements on the canvas
+     */
+    if (!editingText.trim()) {
+      deleteElement(editingId);
+      onElementDelete(editingId);
       setEditingId(null);
       return;
     }
@@ -431,8 +633,8 @@ export const Canvas = ({
 
     return {
       position: "fixed",
-      top: stageBox.top + el.y * scale + viewport.y,
-      left: stageBox.left + el.x * scale + viewport.x,
+      top: stageBox.top + stage.y() + el.y * scale,
+      left: stageBox.left + stage.x() + el.x * scale,
       width: el.width * scale,
       minHeight: el.height * scale,
       fontSize: (props.fontSize || 16) * scale,
@@ -490,6 +692,7 @@ export const Canvas = ({
       if (editingId) return;
       if ((e.target as HTMLElement).tagName === "TEXTAREA") return;
 
+      // delete all selected
       if (
         (e.key === "Backspace" || e.key === "Delete") &&
         selectedIds.length > 0
@@ -499,6 +702,29 @@ export const Canvas = ({
           deleteElement(id);
         });
         setSelectedIds([]);
+      }
+
+      // move selected elements with arrow keys
+      if (selectedIds.length > 0) {
+        const STEP = e.shiftKey ? 20 : 5;
+        let dx = 0,
+          dy = 0;
+
+        if (e.key === "ArrowLeft") dx = -STEP;
+        if (e.key === "ArrowRight") dx = STEP;
+        if (e.key === "ArrowUp") dy = -STEP;
+        if (e.key === "ArrowDown") dy = STEP;
+
+        if (dx !== 0 || dy !== 0) {
+          e.preventDefault();
+          selectedIds.forEach((id) => {
+            const el = useBoardStore.getState().elements[id];
+            if (!el) return;
+            const changes = { x: el.x + dx, y: el.y + dy };
+            updateElement(id, changes);
+            onElementUpdate(id, changes);
+          });
+        }
       }
 
       if (e.key === "Escape") {
@@ -519,14 +745,126 @@ export const Canvas = ({
 
     const dragProps = {
       draggable: activeTool === "select" && !isEditing,
+
       onClick: (e: any) => {
         e.cancelBubble = true;
-        setSelectedIds([el.id]);
+
+        if (e.evt.shiftKey) {
+          const current = useBoardStore.getState().selectedIds;
+
+          if (current.includes(el.id)) {
+            setSelectedIds(current.filter((id) => id !== el.id));
+          } else {
+            setSelectedIds([...current, el.id]);
+          }
+        } else {
+          const current = useBoardStore.getState().selectedIds;
+
+          if (!current.includes(el.id)) {
+            setSelectedIds([el.id]);
+          }
+        }
       },
+
+      onDragStart: (e: Konva.KonvaEventObject<DragEvent>) => {
+        e.cancelBubble = true;
+
+        const currentSelectedIds = useBoardStore.getState().selectedIds;
+
+        // If dragging an unselected element,
+        // make it the only selected element.
+        if (!currentSelectedIds.includes(el.id)) {
+          setSelectedIds([el.id]);
+
+          dragStartPositions.current = {
+            [el.id]: {
+              x: el.x,
+              y: el.y,
+            },
+          };
+
+          return;
+        }
+
+        // Store the ORIGINAL position of every selected element.
+        const currentElements = useBoardStore.getState().elements;
+
+        dragStartPositions.current = {};
+
+        currentSelectedIds.forEach((id) => {
+          const selectedEl = currentElements[id];
+
+          if (!selectedEl) return;
+
+          dragStartPositions.current[id] = {
+            x: selectedEl.x,
+            y: selectedEl.y,
+          };
+        });
+      },
+
+      onDragMove: (e: Konva.KonvaEventObject<DragEvent>) => {
+        e.cancelBubble = true;
+
+        const currentSelectedIds = useBoardStore.getState().selectedIds;
+
+        const startPosition = dragStartPositions.current[el.id];
+
+        if (!startPosition) return;
+
+        const dx = e.target.x() - startPosition.x;
+        const dy = e.target.y() - startPosition.y;
+
+        // Move the other selected Konva nodes visually.
+        currentSelectedIds.forEach((id) => {
+          if (id === el.id) return;
+
+          const start = dragStartPositions.current[id];
+
+          if (!start) return;
+
+          const node = stageRef.current?.findOne(`#${id}`);
+
+          if (!node) return;
+
+          node.x(start.x + dx);
+          node.y(start.y + dy);
+        });
+      },
+
       onDragEnd: (e: Konva.KonvaEventObject<DragEvent>) => {
-        const changes = { x: e.target.x(), y: e.target.y() };
-        updateElement(el.id, changes);
-        onElementUpdate(el.id, changes);
+        e.cancelBubble = true;
+
+        const currentSelectedIds = useBoardStore.getState().selectedIds;
+
+        const startPosition = dragStartPositions.current[el.id];
+
+        if (!startPosition) return;
+
+        const dx = e.target.x() - startPosition.x;
+        const dy = e.target.y() - startPosition.y;
+
+        const currentElements = useBoardStore.getState().elements;
+
+        currentSelectedIds.forEach((id) => {
+          const start = dragStartPositions.current[id];
+
+          if (!start) return;
+
+          const selectedEl = currentElements[id];
+
+          if (!selectedEl) return;
+
+          const changes = {
+            x: start.x + dx,
+            y: start.y + dy,
+          };
+
+          updateElement(id, changes);
+          onElementUpdate(id, changes);
+        });
+
+        dragStartPositions.current = {};
       },
     };
 
@@ -556,18 +894,18 @@ export const Canvas = ({
 
       case "circle":
         return (
-          <Ellipse
-            key={el.id}
-            id={el.id}
-            x={el.x + el.width / 2}
-            y={el.y + el.height / 2}
-            radiusX={el.width / 2}
-            radiusY={el.height / 2}
-            fill={props.fill || "#E24A4A"}
-            opacity={props.opacity ?? 1}
-            {...sel}
-            {...dragProps}
-          />
+          <Group key={el.id} id={el.id} x={el.x} y={el.y} {...dragProps}>
+            <Ellipse
+              x={el.width / 2}
+              y={el.height / 2}
+              radiusX={el.width / 2}
+              radiusY={el.height / 2}
+              fill={props.fill || "#E24A4A"}
+              opacity={props.opacity ?? 1}
+              {...sel}
+              listening={true}
+            />
+          </Group>
         );
 
       case "text":
@@ -579,7 +917,7 @@ export const Canvas = ({
             y={el.y}
             width={el.width}
             opacity={isEditing ? 0 : 1}
-            text={props.content || "Double-click to edit"}
+            text={props.content || ""}
             fontSize={props.fontSize || 16}
             fill={props.color || "#ffffff"}
             wrap="word"
@@ -606,42 +944,66 @@ export const Canvas = ({
               shadowColor="rgba(0,0,0,0.2)"
               shadowBlur={8}
               shadowOffsetY={4}
+              listening={true}
               {...sel}
             />
+
             <Rect
               width={el.width}
               height={28}
               fill="rgba(0,0,0,0.08)"
               cornerRadius={[8, 8, 0, 0]}
+              listening={false}
             />
+
             <Text
               x={8}
               y={36}
               width={el.width - 16}
               height={el.height - 44}
-              text={props.content || "Double-click to edit"}
+              text={props.content || ""}
               fontSize={14}
               fill={props.textColor || "#333"}
               wrap="word"
+              listening={false}
             />
           </Group>
         );
-
       case "pen":
         return (
-          <Line
+          <Group
             key={el.id}
             id={el.id}
-            points={props.points || []}
-            stroke={props.stroke || "#4A90E2"}
-            strokeWidth={props.strokeWidth || 3}
-            tension={0.5}
-            lineCap="round"
-            lineJoin="round"
-            {...dragProps}
-          />
-        );
+            x={el.x}
+            y={el.y}
+            draggable={activeTool === "select" && !isEditing}
+            onClick={(e) => {
+              e.cancelBubble = true;
 
+              if (e.evt.shiftKey) {
+                const current = useBoardStore.getState().selectedIds;
+
+                if (current.includes(el.id)) {
+                  setSelectedIds(current.filter((id) => id !== el.id));
+                } else {
+                  setSelectedIds([...current, el.id]);
+                }
+              } else {
+                setSelectedIds([el.id]);
+              }
+            }}
+          >
+            <Line
+              points={props.points || []}
+              stroke={props.stroke || "#4A90E2"}
+              strokeWidth={props.strokeWidth || 3}
+              tension={0.5}
+              lineCap="round"
+              lineJoin="round"
+              listening={true}
+            />
+          </Group>
+        );
       default:
         return null;
     }
@@ -691,6 +1053,7 @@ export const Canvas = ({
           background: "#0f172a",
         }}
       >
+        <Layer ref={selectionLayerRef} />
         {/* Live pen layer — drawn imperatively, zero React re-renders */}
         <Layer ref={liveLayerRef} />
 
