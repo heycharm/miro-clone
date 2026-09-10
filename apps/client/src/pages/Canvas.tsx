@@ -555,44 +555,40 @@ const handleMouseUp = useCallback(() => {
   setSelectedIds,
 ]);
 
-  const handleDblClick = useCallback(
-    (e: Konva.KonvaEventObject<MouseEvent>) => {
-      e.cancelBubble = true;
+const handleDblClick = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
+  e.cancelBubble = true;
 
-      let target = e.target;
+  let target = e.target;
 
-      // If we double-click a child of a sticky Group,
-      // walk up until we find the element node.
-      let elementId = target.id();
+  // If we double-click a child of a sticky Group,
+  // walk up until we find the element node.
+  let elementId = target.id();
 
-      if (!elementId) {
-        const parent = target.findAncestor((node) => !!node.id(), true);
+  if (!elementId) {
+    const parent = target.findAncestor((node: Konva.Node) => !!node.id(), true);
 
-        if (parent) {
-          elementId = parent.id();
-        }
-      }
+    if (parent) {
+      elementId = parent.id();
+    }
+  }
 
-      if (!elementId) return;
+  if (!elementId) return;
 
-      const el = useBoardStore.getState().elements[elementId];
+  const el = useBoardStore.getState().elements[elementId];
 
-      if (!el) return;
+  if (!el) return;
+  if (el.type !== "text" && el.type !== "sticky") return;
 
-      if (el.type !== "text" && el.type !== "sticky") return;
+  const props = el.properties as any;
 
-      const props = el.properties as any;
+  setEditingId(elementId);
+  setEditingText(props.content || "");
 
-      setEditingId(elementId);
-      setEditingText(props.content || "");
-
-      setTimeout(() => {
-        textareaRef.current?.focus();
-        textareaRef.current?.select();
-      }, 10);
-    },
-    [],
-  );
+  setTimeout(() => {
+    textareaRef.current?.focus();
+    textareaRef.current?.select();
+  }, 10);
+}, []);
 
   // ── Save text ───────────────────────────────────────────────────────────
   const handleTextareaBlur = useCallback(() => {
